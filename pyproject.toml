@@ -1,0 +1,14 @@
+# 직접·하위 의존성 버전은 requirements.txt에서 관리한다.
+# 이 파일은 코드 검사·테스트 도구의 설정을 관리한다.
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "--import-mode=importlib"

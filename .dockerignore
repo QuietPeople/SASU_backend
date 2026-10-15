@@ -1,0 +1,12 @@
+.git/
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+storage/
+SASU_주요문서_MD/
+.DS_Store
