@@ -67,7 +67,7 @@ SASU_backend/
 │   └── users/                   # modules/users에 대응하는 테스트 예시
 │       └── test_api.py          # 사용자 API 테스트 위치·아직 미작성
 ├── storage/
-│   └── videos/                  # 로컬 영상 파일·Git 제외
+│   └── videos/                  # 실제 로컬 영상 파일 저장 위치
 ├── requirements.txt             # Python 3.13 직접·하위 의존성과 버전 관리
 ├── pyproject.toml               # Ruff·pytest 도구 설정
 ├── Dockerfile                   # Python 이미지·의존성·서버 실행
