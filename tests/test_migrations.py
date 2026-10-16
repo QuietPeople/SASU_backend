@@ -1,4 +1,4 @@
-"""별도 임시 DB에서 Alembic 템플릿과 변경 이력 적용을 검증한다."""
+"""별도 임시 이력 경로·SQLite에서 Alembic 템플릿과 실행 환경을 검증한다."""
 
 import ast
 import shutil
@@ -13,7 +13,13 @@ from app.core.config import PROJECT_ROOT
 
 def test_revision_template_and_migration_round_trip(tmp_path):
     migration_dir = tmp_path / "alembic"
-    shutil.copytree(PROJECT_ROOT / "alembic", migration_dir)
+    # 실제 이력은 PostgreSQL 전용이다. 이 테스트는 공통 템플릿·env.py만 검증한다.
+    shutil.copytree(
+        PROJECT_ROOT / "alembic",
+        migration_dir,
+        ignore=shutil.ignore_patterns("versions", "__pycache__"),
+    )
+    (migration_dir / "versions").mkdir()
     config = Config(str(PROJECT_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(migration_dir))
     revision = command.revision(config, message="infrastructure test")

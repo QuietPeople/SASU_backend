@@ -52,7 +52,7 @@ SASU_backend/
 ├── alembic/                     # DB 마이그레이션 환경
 │   ├── env.py                  # 공통 설정·모델로 online/offline 마이그레이션
 │   ├── script.py.mako          # 변경 이력 파일 생성 템플릿
-│   └── versions/               # DB 변경 이력 (아직 테이블 모델·이력 없음)
+│   └── versions/               # 0001_initial_schema: 전체 DB 초기 구조
 ├── alembic.ini                  # Alembic 경로·로그 설정
 ├── scripts/
 │   └── check_db.py             # 실제 DB 연결 확인 명령
@@ -88,7 +88,7 @@ SASU_backend/
 | `app/modules/` | 기능별 모듈을 추가하는 위치입니다. `contents/`·`users/`는 작성 예시이며 각 모듈 안에 라우터·서비스·CRUD·스키마·모델을 둡니다. 관리자·학습자가 함께 쓰는 기능도 같은 모듈을 공유합니다. |
 | `app/integrations/` | 파일 저장소나 외부 API에 접근하는 코드를 둡니다. 현재 영상 저장 대상은 로컬 `storage/videos/`이며 외부 저장 서비스는 도입하지 않았습니다. |
 | `app/jobs/` | 조회수·좋아요 수 등 주기 집계 코드를 둡니다. 실행 도구와 주기는 추후 결정합니다. |
-| `alembic/` | 공통 환경 설정과 모델 메타데이터를 사용해 변경 이력을 생성·적용합니다. 테이블 모델을 작성한 뒤 첫 변경 이력을 추가합니다. |
+| `alembic/` | 전체 DB 초기 구조와 후속 변경 이력을 관리·적용합니다. 초기 이력은 기능별 ORM 모델 없이 실행할 수 있습니다. |
 | `scripts/` | 직접 실행하는 관리 명령을 둡니다. `check_db.py`는 현재 설정의 DB에 `SELECT 1`을 실행하고 연결을 정리합니다. |
 | `tests/` | 공통 기반 테스트와 모듈별 테스트를 둡니다. 설정 테스트는 실제 `.env`를 읽지 않으며, 트랜잭션·마이그레이션 테스트는 임시 SQLite DB를 사용합니다. 실제 PostgreSQL 검증은 별도 연결 확인 명령으로 수행합니다. |
 | `storage/videos/` | 실제 영상 파일을 저장하며 컨테이너의 `/app/storage/videos`에 연결합니다. DB에는 저장 루트 기준 상대 경로를 기록하는 방향입니다. |
@@ -145,11 +145,11 @@ HTTP 요청
 | PostgreSQL 18 | Compose 이미지·초기 DB 접속값·데이터 볼륨·준비 상태 검사 설정 |
 | Pydantic·pydantic-settings | 환경변수 로딩·검증 구현. 요청·응답 스키마는 기능 개발 시 작성 |
 | SQLAlchemy·Psycopg 3 | 동기 엔진·요청별 세션·공통 Base·모델 등록 구현. 개별 테이블 모델은 미작성 |
-| Alembic | online/offline 실행 설정·변경 이력 생성 템플릿 구현. 첫 테이블 마이그레이션은 모델 작성 후 생성 |
+| Alembic | online/offline 실행 설정·변경 이력 생성 템플릿·전체 DB 초기 마이그레이션 |
 | python-multipart | 영상 업로드에 사용 예정. 업로드 API는 아직 미구현 |
 | Ruff·pytest·HTTPX | 검사·테스트용 설정과 공통 기반 테스트 작성. 예시 모듈 API 테스트는 미작성 |
 
-모듈별 모델·첫 테이블 마이그레이션·초기 데이터는 기능 설계에 맞춰 이어서 작성합니다. 영상 길이·형식 검사용 도구와 주기 집계 실행 방식은 해당 기능을 구현할 때 결정합니다.
+모듈별 ORM 모델·API는 기능 설계에 맞춰 이어서 작성합니다. 전체 DB 구조는 아래 초기 마이그레이션으로 구성하며 초기 데이터는 포함하지 않습니다. 영상 길이·형식 검사용 도구와 주기 집계 실행 방식은 해당 기능을 구현할 때 결정합니다.
 
 ## API 문서 (Swagger UI)
 
@@ -254,17 +254,41 @@ docker compose exec backend python -m scripts.check_db
 
 API에서 세션이 필요하면 `app/db/session.py`의 `get_db`를 FastAPI `Depends`로 주입합니다. 세션은 요청마다 생성·종료하고 자동 커밋하지 않습니다. 여러 CRUD 작업을 하나로 처리하는 서비스에서 `with session.begin():`으로 트랜잭션을 감싸면 성공 시 커밋하고 실패 시 롤백합니다. `repository.py`에서 임의로 커밋하지 않습니다.
 
-DB 모델을 작성하고 `app/db/models.py`에 등록한 뒤 변경 이력을 생성합니다.
+### 최초 DB 구조 세팅
+
+최종 통합 DB 설계서(2026-10-16)를 기준으로 `0001_initial_schema`에 전체 구조를 작성했습니다. PostgreSQL 16 이상이 필요하며 현재 Compose는 18을 사용합니다. 각 팀원은 공유된 마이그레이션을 자신의 로컬 Docker DB에 적용합니다. 별도 SQL 파일 실행이나 기능 모듈·ORM 모델 전체 구현은 필요하지 않습니다.
+
+저장소 루트에서 `.env`를 준비하고 DB 비밀번호를 설정한 뒤 실행합니다. 기존 `.env`가 있다면 그대로 사용합니다.
 
 ```sh
-docker compose exec backend alembic revision --autogenerate -m "create contents tables"
+cp -n .env.example .env
+# .env의 POSTGRES_PASSWORD 등 로컬 설정 확인
+docker compose up --build -d --wait
+docker compose exec backend alembic upgrade head
+docker compose exec backend alembic current
 ```
 
-생성된 `alembic/versions/` 파일을 검토한 뒤 적용·확인합니다. Compose에서 이 디렉터리를 연결하므로 컨테이너에서 생성한 파일도 저장소에 남습니다.
+`current` 결과가 `0001_initial_schema (head)`이면 초기 적용이 완료된 상태입니다. 이미 적용한 DB에서 `upgrade head`를 다시 실행하면 기존 이력은 재실행하지 않습니다. 이후 변경도 Git으로 받은 새 이력을 같은 명령으로 적용합니다.
+
+초기 이력은 `sasu` 스키마에 21개 테이블과 외래키·제약조건·인덱스·검증 트리거·집계 뷰 4개·초기화 함수를 생성합니다. 사용자·카테고리·테스트 데이터를 삽입하지 않으며 초기화 함수도 정의만 합니다. 이력은 기본 `public.alembic_version`에 기록됩니다. 기능별 ORM 모델은 이후 `sasu` 스키마의 실제 테이블에 맞춰 매핑합니다.
+
+이 절차는 `sasu` 스키마가 없는 신규 DB 기준입니다. 수동으로 만든 `sasu` 스키마나 다른 마이그레이션 이력이 있는 DB를 자동으로 덮어쓰거나 초기화하지 않습니다. 적용 실패 시 기존 구조·이력의 일치 여부를 먼저 확인합니다. `downgrade base`는 이 초기 이력의 테이블과 데이터를 삭제하므로 최초 세팅 절차에는 사용하지 않습니다.
+
+서버 실행 시 `create_all()`이나 자동 마이그레이션을 수행하지 않습니다. 신규 환경에서는 공유된 이력을 적용하면 되며 `revision --autogenerate`를 실행하지 않습니다. 전체 ORM 모델은 아직 작성되지 않았으므로 후속 변경 이력도 설계서를 기준으로 검토·작성합니다. Compose에서 `alembic/`을 연결하므로 컨테이너에서 생성한 이력 파일도 저장소에 남습니다.
+
+### DB 구조 변경 시
+
+변경 담당자는 기존 이력을 수정하는 대신 새 마이그레이션 파일을 생성합니다.
+
+```sh
+docker compose exec backend alembic revision -m "describe schema change"
+```
+
+생성된 `alembic/versions/` 파일의 `upgrade()`에 변경 내용을, `downgrade()`에 되돌릴 내용을 작성합니다. 현재는 전체 ORM 모델이 준비되지 않아 수동 작성하며, 적용 검증 후 파일을 Git으로 공유합니다.
+
+팀원은 공유된 이력을 받은 뒤 아래 명령으로 각자 로컬 DB에 적용합니다.
 
 ```sh
 docker compose exec backend alembic upgrade head
 docker compose exec backend alembic current
 ```
-
-서버 실행 시 `create_all()`이나 자동 마이그레이션을 수행하지 않습니다. 현재 예시 모듈에는 테이블 모델이 없어 첫 테이블 변경 이력도 없습니다. `CheckConstraint`를 작성할 때는 공통 이름 규칙에 맞춰 `name`을 지정합니다.
