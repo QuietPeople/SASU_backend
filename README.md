@@ -8,6 +8,8 @@ SASU의 학습자·관리자 기능을 위한 백엔드 저장소입니다.
 
 FastAPI·Swagger UI·환경변수 검증·동기 DB 세션·Alembic과 Docker Compose 실행 설정을 구성했습니다. 예시 모듈의 파일은 역할을 표시한 틀이며 개별 API·업무 처리·테이블 모델은 구현하지 않았습니다. Docker 이미지 빌드·백엔드와 PostgreSQL 실행·실제 DB 연결·API 문서 응답을 검증했으며, 공통 기반 테스트 13개와 Ruff 코드 검사를 통과했습니다.
 
+카테고리 목록·추가·이름 수정(CAT-01~03), 태그 검색·등록(TAG-01~02), 반응·시청 통계(STA-04), 테스트 기록 초기화(TST-01)의 API 7개를 구현했습니다. `categories/`·`tags/`·`admin/` 모듈에서 기존 통합 DB를 사용합니다. 역할 확인·이름 중복 처리·오류 형식·세대 변환·PostgreSQL 통합 테스트 방법은 [관리자 API 문서](app/modules/admin/README.md)를 참고합니다.
+
 ## 디렉터리 구조
 
 Python 패키지 표시용 `__init__.py`는 트리에서 생략했습니다.

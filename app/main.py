@@ -9,6 +9,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.api.router import api_router
 from app.core.config import get_settings
+from app.core.exceptions import register_exception_handlers
 from app.db.models import load_models
 from app.db.session import check_database_connection, close_database
 
@@ -43,4 +44,5 @@ app = FastAPI(
         "filter": True,
     },
 )
+register_exception_handlers(app)
 app.include_router(api_router)
