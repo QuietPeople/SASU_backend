@@ -7,6 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,28 @@ async def api_error_handler(request: Request, exc: ApiError) -> JSONResponse:
     )
 
 
+async def http_error_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+    if isinstance(exc.detail, dict) and {"code", "message"} <= exc.detail.keys():
+        detail = exc.detail
+    else:
+        code, message = {
+            400: ("INVALID_REQUEST", "요청 형식을 확인해 주세요."),
+            403: ("ROLE_NOT_ALLOWED", "허용되지 않은 요청입니다."),
+            404: ("NOT_FOUND", "요청한 경로를 찾을 수 없습니다."),
+            405: ("METHOD_NOT_ALLOWED", "허용되지 않은 요청 방식입니다."),
+            413: ("FILE_TOO_LARGE", "허용된 파일 크기를 초과했습니다."),
+            415: ("UNSUPPORTED_MEDIA_TYPE", "지원하지 않는 형식입니다."),
+            422: ("VALIDATION_ERROR", "입력을 확인해 주세요."),
+            503: ("SERVICE_UNAVAILABLE", "서비스를 이용할 수 없습니다."),
+        }.get(exc.status_code, ("HTTP_ERROR", "요청을 처리할 수 없습니다."))
+        if exc.status_code >= 500 and exc.status_code != 503:
+            code, message = "INTERNAL_ERROR", "처리에 실패했습니다."
+        detail = {"code": code, "message": message}
+    return JSONResponse(
+        status_code=exc.status_code, content={"detail": detail}, headers=exc.headers
+    )
+
+
 async def validation_error_handler(request: Request, exc: RequestValidationError):
     errors = exc.errors()
     malformed_json = any(error["type"] == "json_invalid" for error in errors)
@@ -88,6 +111,7 @@ async def internal_error_handler(request: Request, exc: Exception):
 
 
 def register_exception_handlers(app: FastAPI) -> None:
+    app.add_exception_handler(StarletteHTTPException, http_error_handler)
     app.add_exception_handler(RequestValidationError, validation_error_handler)
     app.add_exception_handler(ApiError, api_error_handler)
     app.add_exception_handler(SQLAlchemyError, internal_error_handler)
