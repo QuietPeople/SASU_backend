@@ -2,6 +2,8 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.types import PositiveId
+
 
 class CategoryListQuery(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -16,7 +18,7 @@ class CategoryCreate(BaseModel):
 class CategoryRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    category_id: Annotated[int, Field(gt=0, le=9223372036854775807)]
+    category_id: PositiveId
     name: Annotated[str, Field(min_length=1, max_length=80)]
 
 
