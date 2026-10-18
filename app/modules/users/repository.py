@@ -1,1 +1,7 @@
-"""사용자 CRUD: DB 생성·조회·수정·삭제 쿼리의 예시 위치. 커밋은 서비스에서 관리한다."""
+from sqlalchemy.orm import Session
+
+from app.modules.users.models import User
+
+
+def get_user(session: Session, user_id: int) -> User | None:
+    return session.get(User, user_id)
