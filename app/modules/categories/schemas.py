@@ -10,7 +10,7 @@ class CategoryListQuery(BaseModel):
 class CategoryCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    name: Annotated[str, Field(min_length=1, max_length=80)]
+    name: Annotated[str, Field(min_length=1, max_length=30)]
 
 
 class CategoryRead(BaseModel):

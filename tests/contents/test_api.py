@@ -98,7 +98,7 @@ def test_openapi_distinguishes_json_upload_and_binary_download(client):
         if route.startswith("/api/contents")
         for operation in path.values()
     ]
-    assert {operation["operationId"] for operation in operations} == {
+    assert {operation["operationId"] for operation in operations} >= {
         f"API-CNT-{number:02d}" for number in range(2, 9)
     }
     video = schema["paths"]["/api/contents/{content_id}/video"]

@@ -9,7 +9,10 @@ def list_tags(session: Session, q: str | None, page: int, size: int) -> tuple[li
     if q:
         query = query.where(Tag.name.icontains(q, autoescape=True))
     total = session.scalar(select(func.count()).select_from(query.subquery()))
-    items = list(session.scalars(query.order_by(Tag.tag_id).offset((page - 1) * size).limit(size)))
+    offset = (page - 1) * size
+    if offset >= total:
+        return [], total
+    items = list(session.scalars(query.order_by(Tag.tag_id).offset(offset).limit(size)))
     return items, total
 
 

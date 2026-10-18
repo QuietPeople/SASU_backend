@@ -69,12 +69,10 @@ def test_create_trims_name_and_reuses_existing_id(reference_context, resource, m
 
 
 @pytest.mark.parametrize("resource,model,id_field", RESOURCES)
-def test_name_matching_preserves_case_and_final_db_length(
-    reference_context, resource, model, id_field
-):
+def test_name_matching_preserves_case_and_api_length(reference_context, resource, model, id_field):
     client, factory, ids = reference_context
     headers = {"X-Actor-Id": str(ids["admin"])}
-    names = ["SQL", "sql", "이" * 80]
+    names = ["SQL", "sql", "이" * 30]
     for name in names:
         response = client.post(f"/api/{resource}", json={"name": name}, headers=headers)
         assert response.status_code == 201, response.text
@@ -118,7 +116,7 @@ def test_registration_requires_existing_admin(
         {"name": "  "},
         {"name": None},
         {"name": 123},
-        {"name": "이" * 81},
+        {"name": "이" * 31},
         {"name": "이름", "extra": True},
     ],
 )

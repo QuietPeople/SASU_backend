@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, Query, Response
 from sqlalchemy.orm import Session
 
+from app.api.dependencies import ResourceId, reject_query_parameters
 from app.core.exceptions import ErrorResponse
 from app.db.session import get_db
 from app.modules.categories import service
@@ -34,6 +35,7 @@ def list_categories(
     "",
     response_model=CategoryRead,
     status_code=201,
+    dependencies=[Depends(reject_query_parameters)],
     operation_id="API-CAT-02",
     summary="카테고리 등록·기존 이름 재사용",
     responses={
@@ -53,3 +55,26 @@ def create_category(
     category, created = service.create_category(session, actor_id, body)
     response.status_code = 201 if created else 200
     return category
+
+
+@router.patch(
+    "/{category_id}",
+    response_model=CategoryRead,
+    dependencies=[Depends(reject_query_parameters)],
+    operation_id="API-CAT-03",
+    summary="카테고리 이름 수정",
+    responses={
+        403: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse, "description": "다른 카테고리의 이름과 중복"},
+        422: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+def rename_category(
+    category_id: ResourceId,
+    body: CategoryCreate,
+    actor_id: ActorId,
+    session: Annotated[Session, Depends(get_db)],
+):
+    return service.rename_category(session, actor_id, category_id, body)

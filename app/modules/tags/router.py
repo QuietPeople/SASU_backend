@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, Query, Response
 from sqlalchemy.orm import Session
 
+from app.api.dependencies import reject_query_parameters
 from app.core.exceptions import ErrorResponse
 from app.db.session import get_db
 from app.modules.tags import service
@@ -29,6 +30,7 @@ def list_tags(
     "",
     response_model=TagRead,
     status_code=201,
+    dependencies=[Depends(reject_query_parameters)],
     operation_id="API-TAG-02",
     summary="태그 등록·기존 이름 재사용",
     responses={

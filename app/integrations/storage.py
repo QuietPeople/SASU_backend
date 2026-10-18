@@ -1,6 +1,10 @@
+"""로컬 영상 저장·경로 검증과 서비스 상태 확인을 함께 제공한다."""
+
 import os
 from dataclasses import dataclass
+from os import scandir
 from pathlib import Path, PureWindowsPath
+from tempfile import TemporaryFile
 from typing import BinaryIO
 from uuid import uuid4
 
@@ -55,3 +59,18 @@ class LocalVideoStorage:
         if not path.is_relative_to(self.root) or path == self.root:
             raise ValueError("파일이 저장 루트를 이탈했습니다.")
         return path
+
+
+def check_video_storage_access(root: Path) -> None:
+    """저장 루트의 읽기·쓰기 가능 여부를 실제 I/O로 확인한다. 검사 파일은 남기지 않는다."""
+    if not root.is_dir():
+        raise NotADirectoryError("Video storage is not a directory")
+    with scandir(root):
+        pass
+    marker = b"sasu-storage-health"
+    with TemporaryFile(mode="w+b", dir=root, prefix=".sasu-health-") as probe:
+        probe.write(marker)
+        probe.flush()
+        probe.seek(0)
+        if probe.read() != marker:
+            raise OSError("Video storage read/write verification failed")

@@ -1,3 +1,5 @@
+"""콘텐츠 업로드와 사용자 조회에서 공유하는 기존 app_users 모델."""
+
 from datetime import datetime
 from enum import StrEnum
 
