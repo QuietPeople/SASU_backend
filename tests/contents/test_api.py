@@ -71,6 +71,29 @@ def test_malformed_json_is_distinct_from_field_validation(client):
     assert response.json()["detail"]["code"] == "INVALID_REQUEST"
 
 
+@pytest.mark.parametrize(
+    "content_type", ["multipart/form-data", "multipart/form-data; boundary=example-boundary"]
+)
+def test_malformed_multipart_has_common_error_contract(client, content_type):
+    response = client.put(
+        "/api/contents/1/video",
+        content=b"invalid multipart body",
+        headers={"X-Actor-Id": "2", "Content-Type": content_type},
+    )
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": {"code": "INVALID_REQUEST", "message": "요청 형식을 확인해 주세요."}
+    }
+
+
+@pytest.mark.parametrize("path", ["/api/contents", "/api/contents/1/video"])
+@pytest.mark.parametrize("value", ["0", "-1", str(2**63), "invalid"])
+def test_required_and_optional_actor_headers_keep_id_bounds(client, path, value):
+    response = client.get(path, headers={"X-Actor-Id": value})
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "VALIDATION_ERROR"
+
+
 def test_multipart_rejects_extra_fields_and_multiple_files(client):
     headers = {"X-Actor-Id": "2"}
     file = ("sample.mp4", b"contract-only", "video/mp4")
