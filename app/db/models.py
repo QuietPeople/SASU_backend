@@ -3,6 +3,8 @@
 from importlib import import_module
 
 MODEL_MODULES = (
+    "app.modules.categories.models",
+    "app.modules.tags.models",
     "app.modules.contents.models",
     "app.modules.users.models",
 )

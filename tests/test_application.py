@@ -20,6 +20,7 @@ def test_startup_database_check_and_documentation(monkeypatch, tmp_path):
         assert client.get("/redoc").status_code == 200
         schema = client.get("/openapi.json").json()
         assert schema["info"]["title"] == "SASU Backend API"
+        assert schema["paths"]["/api/contents"]["post"]["operationId"] == "API-CNT-04"
         assert "/api/contents/{content_id}/statistics/reactions" in schema["paths"]
         assert "/api/users/{user_id}/test-records/reset" in schema["paths"]
         assert {"get", "post"} <= schema["paths"]["/api/categories"].keys()

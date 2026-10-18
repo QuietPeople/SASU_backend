@@ -253,13 +253,13 @@ def test_tag_registration_does_not_attach_to_content(client, records, database):
 
 
 def test_tag_failure_rolls_back_new_row(client, records, database, monkeypatch):
-    create_tag = tags_repository.create_tag
+    create_tag = tags_repository.insert_tag
 
     def fail_after_insert(session, name):
         create_tag(session, name)
         raise OperationalError("private SQL", {}, Exception("private connection"))
 
-    monkeypatch.setattr(tags_repository, "create_tag", fail_after_insert)
+    monkeypatch.setattr(tags_repository, "insert_tag", fail_after_insert)
     response = client.post("/api/tags", headers=headers(records), json={"name": "실패한 태그"})
     assert response.status_code == 500
     assert "private" not in response.text
@@ -269,7 +269,7 @@ def test_tag_failure_rolls_back_new_row(client, records, database, monkeypatch):
 @pytest.mark.parametrize("kind", ["categories", "tags"])
 def test_concurrent_create_waits_and_reuses_committed_name(postgres_engine, monkeypatch, kind):
     repository = categories_repository if kind == "categories" else tags_repository
-    create = repository.create_category if kind == "categories" else repository.create_tag
+    create = repository.insert_category if kind == "categories" else repository.insert_tag
     key = "category_id" if kind == "categories" else "tag_id"
     unique_name = "동시" + uuid4().hex[:20]
     with postgres_engine.begin() as connection:
@@ -281,7 +281,7 @@ def test_concurrent_create_waits_and_reuses_committed_name(postgres_engine, monk
             {"name": unique_name},
         )
     entered = Event()
-    original_lock = repository.lock_for_write
+    original_lock = repository.lock_creation
 
     def observe_lock(session):
         entered.set()
@@ -292,12 +292,12 @@ def test_concurrent_create_waits_and_reuses_committed_name(postgres_engine, monk
             session.execute(text("SET LOCAL lock_timeout = '5s'"))
             yield session
 
-    monkeypatch.setattr(repository, "lock_for_write", observe_lock)
+    monkeypatch.setattr(repository, "lock_creation", observe_lock)
     app.dependency_overrides[get_db] = concurrent_session
     try:
         with Session(postgres_engine) as first, TestClient(app) as http:
             original_lock(first)
-            original = dict(create(first, unique_name))
+            original_id = getattr(create(first, unique_name), key)
             with ThreadPoolExecutor(max_workers=1) as executor:
                 pending = executor.submit(
                     http.post,
@@ -313,7 +313,7 @@ def test_concurrent_create_waits_and_reuses_committed_name(postgres_engine, monk
                 finally:
                     first.rollback()
             assert response.status_code == 200, response.text
-            assert response.json()[key] == original[key]
+            assert response.json()[key] == original_id
             assert (
                 first.scalar(
                     text(f"SELECT count(*) FROM sasu.{kind} WHERE name = :name"),

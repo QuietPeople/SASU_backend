@@ -1,5 +1,3 @@
-"""FastAPI 애플리케이션 진입점. 개별 API는 모듈에서 구현한다."""
-
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager

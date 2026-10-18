@@ -1,29 +1,31 @@
-"""태그 입력, 검색 조건과 페이지 응답."""
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class TagName(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
-
-    name: str = Field(min_length=1, max_length=30)
-
-
-class TagQuery(BaseModel):
+class TagListQuery(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    q: str = ""
-    page: int = Field(default=1, ge=1)
-    size: int = Field(default=20, ge=1, le=100)
+    q: str | None = None
+    page: Annotated[int, Field(ge=1)] = 1
+    size: Annotated[int, Field(ge=1, le=100)] = 20
 
 
-class Tag(BaseModel):
-    tag_id: int
-    name: str
+class TagCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    name: Annotated[str, Field(min_length=1, max_length=30)]
+
+
+class TagRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    tag_id: Annotated[int, Field(gt=0, le=9223372036854775807)]
+    name: Annotated[str, Field(min_length=1, max_length=80)]
 
 
 class TagPage(BaseModel):
-    items: list[Tag]
+    items: list[TagRead]
     page: int
     size: int
     total: int

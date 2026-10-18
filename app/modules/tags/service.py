@@ -1,15 +1,14 @@
-"""태그 목록 페이지와 동일 표시명 재사용 정책."""
-
 from sqlalchemy.orm import Session
 
 from app.modules.tags import repository
-from app.modules.tags.schemas import Tag, TagPage, TagQuery
+from app.modules.tags.schemas import TagCreate, TagListQuery, TagPage, TagRead
+from app.modules.users.service import require_admin
 
 
-def get_tags(session: Session, query: TagQuery) -> TagPage:
-    rows, total = repository.list_tags(session, query.q, (query.page - 1) * query.size, query.size)
+def list_tags(session: Session, query: TagListQuery) -> TagPage:
+    items, total = repository.list_tags(session, query.q, query.page, query.size)
     return TagPage(
-        items=[Tag.model_validate(row) for row in rows],
+        items=[TagRead.model_validate(row) for row in items],
         page=query.page,
         size=query.size,
         total=total,
@@ -17,13 +16,15 @@ def get_tags(session: Session, query: TagQuery) -> TagPage:
     )
 
 
-def create_tag(session: Session, name: str) -> tuple[Tag, bool]:
+def create_tag(session: Session, actor_id: int, data: TagCreate) -> tuple[TagRead, bool]:
     try:
-        repository.lock_for_write(session)
-        existing = repository.find_by_name(session, name)
-        created = existing is None
-        row = repository.create_tag(session, name) if created else existing
-        result = Tag.model_validate(row)
+        require_admin(session, actor_id)
+        repository.lock_creation(session)
+        tag = repository.get_by_name(session, data.name)
+        created = tag is None
+        if tag is None:
+            tag = repository.insert_tag(session, data.name)
+        result = TagRead.model_validate(tag)
         session.commit()
         return result, created
     except Exception:

@@ -8,6 +8,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# 영상 파일의 컨테이너·스트림·길이 검사에 ffprobe를 사용한다.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt ./
 # requirements 변경 시에만 설치 레이어를 다시 만들고 다운로드 캐시를 재사용한다.
 # 설치나 의존성 검사 실패는 빌드를 실패시킨다.

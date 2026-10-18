@@ -1,74 +1,42 @@
-"""기존 sasu.categories를 조회·수정한다. 커밋은 서비스에서 결정한다."""
+from datetime import UTC, datetime
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-
-def list_categories(session: Session):
-    return (
-        session.execute(text("SELECT category_id, name FROM sasu.categories ORDER BY category_id"))
-        .mappings()
-        .all()
-    )
+from app.modules.categories.models import Category
 
 
-def lock_for_write(session: Session) -> None:
-    # 이름 UNIQUE가 없는 기존 스키마에서 생성·수정의 검사와 쓰기를 직렬화한다.
-    # 일반 SELECT와 FK 참조 조회는 이 잠금과 함께 진행할 수 있다.
-    session.execute(text("LOCK TABLE sasu.categories IN SHARE ROW EXCLUSIVE MODE"))
+def list_categories(session: Session) -> list[Category]:
+    return list(session.scalars(select(Category).order_by(Category.category_id)))
 
 
-def find_category(session: Session, category_id: int):
-    return (
-        session.execute(
-            text("SELECT category_id, name FROM sasu.categories WHERE category_id = :category_id"),
-            {"category_id": category_id},
-        )
-        .mappings()
-        .one_or_none()
-    )
+def lock_creation(session: Session) -> None:
+    # DB에 이름 UNIQUE가 없으므로, 생성·이름 수정을 직렬화한 뒤 이름을 확인한다.
+    # SQLite 단위 테스트에서는 PostgreSQL의 테이블 잠금을 사용하지 않는다.
+    if session.get_bind().dialect.name == "postgresql":
+        session.execute(text("LOCK TABLE sasu.categories IN SHARE ROW EXCLUSIVE MODE"))
 
 
-def find_by_name(session: Session, name: str, excluding_id: int | None = None):
-    return (
-        session.execute(
-            text(
-                """
-            SELECT category_id, name FROM sasu.categories
-            WHERE name = :name
-              AND (CAST(:excluding_id AS bigint) IS NULL OR category_id <> :excluding_id)
-            ORDER BY category_id LIMIT 1
-            """
-            ),
-            {"name": name, "excluding_id": excluding_id},
-        )
-        .mappings()
-        .one_or_none()
-    )
+def get_by_name(session: Session, name: str, excluding_id: int | None = None) -> Category | None:
+    statement = select(Category).where(Category.name == name)
+    if excluding_id is not None:
+        statement = statement.where(Category.category_id != excluding_id)
+    return session.scalar(statement.order_by(Category.category_id).limit(1))
 
 
-def create_category(session: Session, name: str):
-    return (
-        session.execute(
-            text("INSERT INTO sasu.categories (name) VALUES (:name) RETURNING category_id, name"),
-            {"name": name},
-        )
-        .mappings()
-        .one()
-    )
+def insert_category(session: Session, name: str) -> Category:
+    category = Category(name=name)
+    session.add(category)
+    session.flush()
+    return category
 
 
-def rename_category(session: Session, category_id: int, name: str):
-    return (
-        session.execute(
-            text(
-                """
-            UPDATE sasu.categories SET name = :name, updated_at = clock_timestamp()
-            WHERE category_id = :category_id RETURNING category_id, name
-            """
-            ),
-            {"category_id": category_id, "name": name},
-        )
-        .mappings()
-        .one()
-    )
+def get_category(session: Session, category_id: int) -> Category | None:
+    return session.get(Category, category_id)
+
+
+def rename_category(session: Session, category: Category, name: str) -> Category:
+    category.name = name
+    category.updated_at = datetime.now(UTC)
+    session.flush()
+    return category

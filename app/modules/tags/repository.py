@@ -1,55 +1,33 @@
-"""기존 sasu.tags의 태그 이름 검색·생성. 이름 UNIQUE는 추가하지 않는다."""
-
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from app.modules.tags.models import Tag
 
-def list_tags(session: Session, query: str, offset: int, size: int):
-    # strpos로 %·_·역슬래시를 와일드카드가 아닌 입력 문자 그대로 검색한다.
-    total = session.scalar(
-        text("SELECT count(*) FROM sasu.tags WHERE strpos(lower(name), lower(:q)) > 0"),
-        {"q": query},
-    )
+
+def list_tags(session: Session, q: str | None, page: int, size: int) -> tuple[list[Tag], int]:
+    query = select(Tag)
+    if q:
+        query = query.where(Tag.name.icontains(q, autoescape=True))
+    total = session.scalar(select(func.count()).select_from(query.subquery()))
+    offset = (page - 1) * size
     if offset >= total:
         return [], total
-    rows = (
-        session.execute(
-            text(
-                """
-            SELECT tag_id, name FROM sasu.tags
-            WHERE strpos(lower(name), lower(:q)) > 0
-            ORDER BY tag_id LIMIT :size OFFSET :offset
-            """
-            ),
-            {"q": query, "size": size, "offset": offset},
-        )
-        .mappings()
-        .all()
-    )
-    return rows, total
+    items = list(session.scalars(query.order_by(Tag.tag_id).offset(offset).limit(size)))
+    return items, total
 
 
-def lock_for_write(session: Session) -> None:
-    session.execute(text("LOCK TABLE sasu.tags IN SHARE ROW EXCLUSIVE MODE"))
+def lock_creation(session: Session) -> None:
+    # UNIQUE 추가 없이 서로 다른 관리자의 동시 조회·등록도 직렬화한다.
+    if session.get_bind().dialect.name == "postgresql":
+        session.execute(text("LOCK TABLE sasu.tags IN SHARE ROW EXCLUSIVE MODE"))
 
 
-def find_by_name(session: Session, name: str):
-    return (
-        session.execute(
-            text("SELECT tag_id, name FROM sasu.tags WHERE name = :name ORDER BY tag_id LIMIT 1"),
-            {"name": name},
-        )
-        .mappings()
-        .one_or_none()
-    )
+def get_by_name(session: Session, name: str) -> Tag | None:
+    return session.scalar(select(Tag).where(Tag.name == name).order_by(Tag.tag_id).limit(1))
 
 
-def create_tag(session: Session, name: str):
-    return (
-        session.execute(
-            text("INSERT INTO sasu.tags (name) VALUES (:name) RETURNING tag_id, name"),
-            {"name": name},
-        )
-        .mappings()
-        .one()
-    )
+def insert_tag(session: Session, name: str) -> Tag:
+    tag = Tag(name=name)
+    session.add(tag)
+    session.flush()
+    return tag
