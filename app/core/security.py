@@ -3,14 +3,12 @@
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import Depends, Header
-from sqlalchemy import text
+from fastapi import Depends
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ApiError
+from app.api.dependencies import ActorId
 from app.db.session import get_db
-
-MAX_BIGINT = 2**63 - 1
+from app.modules.users.service import check_admin_role, get_actor
 
 
 @dataclass(frozen=True)
@@ -20,23 +18,13 @@ class Actor:
 
 
 def require_actor(
-    actor_id: Annotated[int, Header(alias="X-Actor-Id", gt=0, le=MAX_BIGINT)],
+    actor_id: ActorId,
     session: Annotated[Session, Depends(get_db)],
 ) -> Actor:
-    user = (
-        session.execute(
-            text("SELECT user_id, role FROM sasu.app_users WHERE user_id = :actor_id"),
-            {"actor_id": actor_id},
-        )
-        .mappings()
-        .one_or_none()
-    )
-    if user is None:
-        raise ApiError(404, "USER_NOT_FOUND", "사용자를 찾을 수 없습니다.")
-    return Actor(user_id=user["user_id"], role=user["role"])
+    user = get_actor(session, actor_id, not_found_message="사용자를 찾을 수 없습니다.")
+    return Actor(user_id=user.user_id, role=user.role)
 
 
 def require_admin(actor: Annotated[Actor, Depends(require_actor)]) -> int:
-    if actor.role != "ADMIN":
-        raise ApiError(403, "ROLE_NOT_ALLOWED", "관리자만 이용할 수 있습니다.")
+    check_admin_role(actor.role, message="관리자만 이용할 수 있습니다.")
     return actor.user_id

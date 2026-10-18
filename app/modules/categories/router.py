@@ -1,9 +1,9 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Query, Response
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import ResourceId, reject_query_parameters
+from app.api.dependencies import ActorId, ResourceId, reject_query_parameters
 from app.core.exceptions import ErrorResponse
 from app.db.session import get_db
 from app.modules.categories import service
@@ -15,7 +15,6 @@ from app.modules.categories.schemas import (
 )
 
 router = APIRouter(prefix="/categories", tags=["categories"])
-ActorId = Annotated[int, Header(alias="X-Actor-Id", gt=0, le=9223372036854775807)]
 
 
 @router.get(

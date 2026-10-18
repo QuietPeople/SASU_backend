@@ -2,7 +2,6 @@
 
 from collections import defaultdict
 from decimal import Decimal
-from pathlib import Path
 
 from sqlalchemy.orm import Session
 
@@ -10,9 +9,11 @@ from app.api.schemas import Page
 from app.core.config import get_settings
 from app.core.exceptions import ApiError
 from app.core.security import Actor
+from app.integrations.storage import LocalVideoStorage
+from app.modules.contents.schemas import ContentSummary
+from app.modules.contents.urls import build_video_url
 from app.modules.curricula import repository
 from app.modules.curricula.schemas import (
-    ContentSummary,
     CurriculumDetail,
     CurriculumInput,
     CurriculumListQuery,
@@ -44,12 +45,11 @@ def target_user(session: Session, query: CurriculumQuery, actor: Actor) -> int |
 
 
 def media_available(relative_path: str | None) -> bool:
-    if not relative_path or "\\" in relative_path or Path(relative_path).is_absolute():
+    if not relative_path:
         return False
-    root = get_settings().video_storage_root.resolve()
     try:
-        path = (root / relative_path).resolve()
-        return path.is_relative_to(root) and path.is_file()
+        storage = LocalVideoStorage(get_settings().video_storage_root)
+        return storage.resolve_path(relative_path).is_file()
     except (OSError, RuntimeError, ValueError):
         return False
 
@@ -63,9 +63,11 @@ def make_step(row, user_id: int | None, view: str, actor_id: int) -> CurriculumS
         revision = str(row["video_asset_id"]) if row["video_asset_id"] else None
         video_url = None
         if revision:
-            video_url = f"/api/contents/{row['content_id']}/video?revision={revision}"
-            if view == "editor":
-                video_url += f"&preview=true&actor_id={actor_id}"
+            video_url = build_video_url(
+                row["content_id"],
+                revision,
+                preview_actor_id=actor_id if view == "editor" else None,
+            )
         content = ContentSummary(
             content_id=row["content_id"],
             title=row["title"],

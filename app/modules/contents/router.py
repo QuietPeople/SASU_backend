@@ -7,7 +7,6 @@ from fastapi import (
     Form,
     Header,
     HTTPException,
-    Path,
     Query,
     Request,
     UploadFile,
@@ -17,6 +16,8 @@ from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
+from app.api.dependencies import ActorId, OptionalActorId
+from app.api.dependencies import ResourceId as ContentId
 from app.core.config import get_settings
 from app.core.exceptions import ApiError, ErrorResponse
 from app.db.session import get_db
@@ -30,7 +31,6 @@ from app.modules.contents.schemas import (
     ContentPage,
     ContentUpdate,
     EditableContent,
-    ResourceId,
     VideoInfo,
     VideoPolicyOut,
     VideoQuery,
@@ -48,11 +48,6 @@ router = APIRouter(
         500: {"model": ErrorResponse, "description": "서버 처리·DB 오류"},
     },
 )
-
-ContentId = Annotated[int, Path(gt=0, le=9223372036854775807)]
-ActorId = Annotated[ResourceId, Header(alias="X-Actor-Id", description="목업 행위자 USER ID")]
-OptionalActorId = Annotated[ResourceId | None, Header(alias="X-Actor-Id")]
-
 
 @router.get(
     "",

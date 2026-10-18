@@ -2,15 +2,19 @@
 
 from typing import Annotated
 
-from fastapi import Depends, Path, Request
+from fastapi import Depends, Header, Path, Request
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ApiError
-from app.core.security import MAX_BIGINT
+from app.core.types import PositiveId
 from app.db.session import get_db
 
 Database = Annotated[Session, Depends(get_db)]
-ResourceId = Annotated[int, Path(gt=0, le=MAX_BIGINT)]
+ResourceId = Annotated[PositiveId, Path()]
+ActorId = Annotated[
+    PositiveId, Header(alias="X-Actor-Id", description="목업 행위자 USER ID")
+]
+OptionalActorId = Annotated[PositiveId | None, Header(alias="X-Actor-Id")]
 
 
 def reject_query_parameters(request: Request) -> None:

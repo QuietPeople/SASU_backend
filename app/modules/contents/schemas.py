@@ -3,7 +3,11 @@ from typing import Annotated, Literal, Self
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StrictBool, model_validator
 
-ResourceId = Annotated[int, Field(gt=0, le=9223372036854775807)]
+from app.api.schemas import Page, PageQuery, ViewQuery
+from app.core.types import PositiveId as ResourceId
+from app.modules.categories.schemas import CategoryRead
+from app.modules.tags.schemas import TagRead
+
 NonBlankText = Annotated[str, Field(min_length=1)]
 Title = Annotated[str, Field(min_length=1, max_length=200)]
 ContentStatus = Literal["DRAFT", "PUBLISHED"]
@@ -17,19 +21,16 @@ class InputModel(ApiModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
 
-class ContentListQuery(InputModel):
+class ContentListQuery(InputModel, PageQuery):
     q: Annotated[str, Field(max_length=200)] | None = None
     category_id: ResourceId | None = None
     status: Literal["DRAFT", "PUBLISHED", "ALL"] | None = Field(
         default=None, description="생략 시 역할에 따라 결정: ADMIN=ALL, LEARNER=PUBLISHED."
     )
     user_id: ResourceId | None = None
-    page: Annotated[int, Field(ge=1)] = 1
-    size: Annotated[int, Field(ge=1, le=100)] = 20
 
 
-class ContentDetailQuery(InputModel):
-    view: Literal["learner", "editor"] = "learner"
+class ContentDetailQuery(InputModel, ViewQuery):
     user_id: ResourceId | None = None
 
 
@@ -82,14 +83,12 @@ class ContentUpdate(ContentFields):
         return self
 
 
-class CategorySummary(ApiModel):
-    category_id: ResourceId
-    name: Annotated[str, Field(min_length=1, max_length=80)]
+class CategorySummary(CategoryRead):
+    model_config = ConfigDict(extra="forbid", from_attributes=False)
 
 
-class TagSummary(ApiModel):
-    tag_id: ResourceId
-    name: Annotated[str, Field(min_length=1, max_length=80)]
+class TagSummary(TagRead):
+    model_config = ConfigDict(extra="forbid", from_attributes=False)
 
 
 class CurriculumReference(ApiModel):
@@ -114,12 +113,12 @@ class ContentSummary(ApiModel):
     status: ContentStatus
 
 
-class ContentPage(ApiModel):
-    items: list[ContentSummary]
+class ContentPage(Page[ContentSummary]):
+    model_config = ConfigDict(extra="forbid")
+
     page: Annotated[int, Field(ge=1)]
     size: Annotated[int, Field(ge=1, le=100)]
     total: Annotated[int, Field(ge=0)]
-    has_next: bool
 
 
 class ContentDetail(ApiModel):

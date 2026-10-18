@@ -1,14 +1,13 @@
 """외부 question/MCQ_3 명칭과 DB quiz/MCQ3를 구분한다."""
 
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.core.security import MAX_BIGINT
+from app.core.types import PositiveId
 
 QuestionType = Literal["OX", "MCQ_3", "MCQ_4"]
-PositiveId = Annotated[int, Field(gt=0, le=MAX_BIGINT)]
 
 
 class OptionInput(BaseModel):

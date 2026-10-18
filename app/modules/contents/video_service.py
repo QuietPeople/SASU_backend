@@ -20,9 +20,9 @@ from app.integrations.storage import LocalVideoStorage
 from app.modules.contents import repository
 from app.modules.contents.models import Content, ContentStatus, VideoAsset
 from app.modules.contents.schemas import VideoInfo, VideoQuery
+from app.modules.contents.urls import build_video_url
 from app.modules.users.models import UserRole
-from app.modules.users.repository import get_user
-from app.modules.users.service import require_admin
+from app.modules.users.service import get_actor, require_admin
 from app.modules.videos.service import IngestedVideo, VideoIngestService
 
 logger = logging.getLogger(__name__)
@@ -94,13 +94,10 @@ def upload_video(
             revision = str(asset.video_asset_id)
             result = VideoInfo(
                 content_id=content.content_id,
-                video_url=(
-                    f"/api/contents/{content.content_id}/video?revision={revision}"
-                    + (
-                        f"&preview=true&actor_id={actor_id}"
-                        if content.status == ContentStatus.DRAFT
-                        else ""
-                    )
+                video_url=build_video_url(
+                    content.content_id,
+                    revision,
+                    preview_actor_id=actor_id if content.status == ContentStatus.DRAFT else None,
                 ),
                 video_duration=float(asset.duration_seconds),
                 media_revision=revision,
@@ -193,9 +190,7 @@ def get_video(
     try:
         with session.begin():
             if query.preview:
-                actor = get_user(session, query.actor_id)
-                if actor is None:
-                    raise ApiError(404, "USER_NOT_FOUND", "행위자 사용자가 없습니다.")
+                actor = get_actor(session, query.actor_id)
                 if actor.role != UserRole.ADMIN:
                     raise ApiError(403, "EDITOR_VIEW_REQUIRED", "미리보기는 관리자만 가능합니다.")
             # 구 파일을 열기 전 교체가 완료되어 사라지는 경합을 피한다.
