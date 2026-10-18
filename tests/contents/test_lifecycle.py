@@ -1,5 +1,4 @@
 from datetime import UTC, datetime
-from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -14,17 +13,17 @@ from app.core.config import get_settings
 from app.db.base import Base
 from app.db.models import load_models
 from app.db.session import get_db
-from app.integrations.video_processing import VideoMetadata, get_video_inspector
 from app.modules.categories.models import Category
 from app.modules.contents import read_tables as reads
 from app.modules.contents import repository
 from app.modules.contents.models import Content, ContentTag, VideoAsset
 from app.modules.tags.models import Tag
 from app.modules.users.models import User, UserRole
+from app.modules.videos.service import get_video_ingest_service
 
 
 @pytest.fixture
-def context(monkeypatch):
+def context(monkeypatch, stub_video_ingest):
     load_models()
     engine = create_engine(
         "sqlite+pysqlite://",
@@ -62,13 +61,10 @@ def context(monkeypatch):
         with factory() as session:
             yield session
 
-    class Inspector:
-        def inspect(self, stream):
-            stream.read()
-            return VideoMetadata(mime_type="video/mp4", duration_seconds=Decimal("12.345"))
-
     monkeypatch.setitem(main.app.dependency_overrides, get_db, provide_session)
-    monkeypatch.setitem(main.app.dependency_overrides, get_video_inspector, Inspector)
+    monkeypatch.setitem(
+        main.app.dependency_overrides, get_video_ingest_service, stub_video_ingest
+    )
     client = TestClient(main.app)
     ctx = SimpleNamespace(
         client=client,
@@ -459,7 +455,8 @@ def test_failed_replacement_keeps_old_connection_and_file(context, monkeypatch, 
         raise SQLAlchemyError("private commit failure")
 
     if failure == "inspection":
-        monkeypatch.delitem(main.app.dependency_overrides, get_video_inspector)
+        # 실제 데이터 처리: 영상이 아닌 바이트는 시그니처 판별에서 415로 거절된다.
+        monkeypatch.delitem(main.app.dependency_overrides, get_video_ingest_service)
     elif failure == "after_flush":
         monkeypatch.setattr(repository, "attach_video", fail_attach)
     else:
@@ -469,7 +466,7 @@ def test_failed_replacement_keeps_old_connection_and_file(context, monkeypatch, 
     finally:
         if failure == "commit":
             event.remove(Session, "before_commit", fail_commit)
-    assert response.status_code == (422 if failure == "inspection" else 500), response.text
+    assert response.status_code == (415 if failure == "inspection" else 500), response.text
     assert "private" not in response.text
     assert editor(ctx, content_id).json() == before
     assert list(ctx.root.iterdir()) == [old_path] and old_path.read_bytes() == b"original-video"

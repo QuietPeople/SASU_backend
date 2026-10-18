@@ -18,10 +18,9 @@ from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
 from app.core.config import get_settings
-from app.core.exceptions import ErrorResponse
+from app.core.exceptions import ApiError, ErrorResponse
 from app.db.session import get_db
 from app.integrations.storage import LocalVideoStorage
-from app.integrations.video_processing import VideoInspector, get_video_inspector
 from app.modules.contents import service, video_service
 from app.modules.contents.schemas import (
     ContentCreate,
@@ -33,8 +32,10 @@ from app.modules.contents.schemas import (
     EditableContent,
     ResourceId,
     VideoInfo,
+    VideoPolicyOut,
     VideoQuery,
 )
+from app.modules.videos.service import VideoIngestService, get_video_ingest_service
 
 router = APIRouter(
     prefix="/contents",
@@ -66,6 +67,30 @@ def list_contents(
     session: Annotated[Session, Depends(get_db)],
 ):
     return service.list_contents(session, actor_id, query)
+
+
+@router.get(
+    "/video-policy",
+    response_model=VideoPolicyOut,
+    operation_id="API-CNT-VIDEO-POLICY",
+    summary="영상 업로드 허용 조건",
+    description="업로드 화면 안내와 파일 선택 accept 속성에 쓰는 용량·길이·형식 기준입니다.",
+)
+def video_policy(
+    ingest: Annotated[VideoIngestService, Depends(get_video_ingest_service)],
+) -> VideoPolicyOut:
+    policy = ingest.policy
+    return VideoPolicyOut(
+        max_bytes=policy.max_bytes,
+        min_duration_sec=policy.min_duration_sec,
+        max_duration_sec=policy.max_duration_sec,
+        max_long_edge_px=policy.max_long_edge_px,
+        accept="video/mp4,video/quicktime,video/webm,video/x-matroska,.mp4,.mov,.webm,.mkv",
+        formats=[
+            "MP4·MOV·MKV (H.264 영상, AAC·MP3 음성) → MP4로 저장",
+            "WebM (VP8·VP9·AV1 영상, Opus·Vorbis 음성) → WebM으로 저장",
+        ],
+    )
 
 
 @router.get(
@@ -132,11 +157,17 @@ def update_content(
     responses={
         200: {
             "description": "전체 영상 파일 응답",
-            "content": {"video/mp4": {"schema": {"type": "string", "format": "binary"}}},
+            "content": {
+                "video/mp4": {"schema": {"type": "string", "format": "binary"}},
+                "video/webm": {"schema": {"type": "string", "format": "binary"}},
+            },
         },
         206: {
             "description": "단일 Range 부분 응답",
-            "content": {"video/mp4": {"schema": {"type": "string", "format": "binary"}}},
+            "content": {
+                "video/mp4": {"schema": {"type": "string", "format": "binary"}},
+                "video/webm": {"schema": {"type": "string", "format": "binary"}},
+            },
         },
         416: {
             "model": ErrorResponse,
@@ -173,7 +204,7 @@ def get_video(
     return StreamingResponse(
         video.chunks(),
         status_code=206 if video.partial else 200,
-        media_type="video/mp4",
+        media_type=video.mime_type,
         headers=headers,
         background=BackgroundTask(video.close),
     )
@@ -185,17 +216,22 @@ def get_video(
     operation_id="API-CNT-07",
     summary="영상 업로드·교체",
     responses={
-        415: {"model": ErrorResponse, "description": "허용 MP4 형식이 아님"},
-        422: {"model": ErrorResponse, "description": "요청·영상 검증 실패 또는 검사 시간 초과"},
-        502: {"model": ErrorResponse, "description": "영상 검증 기능의 반환값 오류"},
-        503: {"model": ErrorResponse, "description": "서버 영상 검사 도구 사용 불가"},
+        413: {"model": ErrorResponse, "description": "허용 용량 초과"},
+        415: {"model": ErrorResponse, "description": "영상이 아니거나 재생 불가 형식"},
+        422: {
+            "model": ErrorResponse,
+            "description": "요청·영상 검증 실패, 길이 범위 밖, 검사 시간 초과",
+        },
+        500: {"model": ErrorResponse, "description": "영상 변환 또는 저장 실패"},
+        503: {"model": ErrorResponse, "description": "서버 영상 처리 도구(ffmpeg) 사용 불가"},
     },
     description=(
         "영상을 저장·연결합니다. 교체에는 현재 expected_media_revision이 필요합니다. "
         "revision 불일치는 409입니다. "
         "교체 성공 후 구 파일을 삭제하며 기존 시청·풀이 기록은 유지합니다. "
-        "서버가 파일 내용의 MP4 형식·영상 스트림·길이를 검사하고 영상 자산에 저장합니다. "
-        "클라이언트의 확장자·MIME만으로 판정하지 않으며, 검사 제한 시간은 30초입니다."
+        "서버가 파일 내용으로 형식을 판별하고(확장자·MIME 미사용) ffprobe로 코덱·길이·해상도를 "
+        "검사한 뒤, 웹 재생용으로 정규화(MP4 faststart, 메타데이터 제거)해 저장합니다. "
+        "허용 조건은 GET /api/contents/video-policy로 확인합니다."
     ),
 )
 async def upload_video(
@@ -203,9 +239,10 @@ async def upload_video(
     content_id: ContentId,
     actor_id: ActorId,
     session: Annotated[Session, Depends(get_db)],
-    inspector: Annotated[VideoInspector, Depends(get_video_inspector)],
+    ingest: Annotated[VideoIngestService, Depends(get_video_ingest_service)],
     file: Annotated[
-        UploadFile, File(description="MP4 영상 파일 1개. 서버에서 형식·스트림·길이 검사")
+        UploadFile,
+        File(description="영상 파일 1개(MP4·MOV·MKV·WebM). 서버에서 형식·코덱·길이 검사"),
     ],
     expected_media_revision: Annotated[
         str | None, Form(min_length=1, description="최초 연결 시 생략, 교체 시 필수")
@@ -224,16 +261,22 @@ async def upload_video(
                 "message": "파일 1개와 정의된 폼 필드만 허용합니다.",
             },
         )
-    settings = get_settings()
-    storage = LocalVideoStorage(settings.video_storage_root)
+    length = request.headers.get("content-length")
+    limit = ingest.policy.max_bytes + 1024 * 1024  # 폼 필드 여유분
+    if length and length.isdigit() and int(length) > limit:
+        raise ApiError(
+            413,
+            "FILE_TOO_LARGE",
+            f"영상은 최대 {ingest.policy.max_megabytes}MB까지 올릴 수 있습니다.",
+            fields=[{"field": "file", "reason": "too_large"}],
+        )
     return await run_in_threadpool(
         video_service.upload_video,
         session,
         actor_id,
         content_id,
         file.file,
-        storage,
-        inspector,
+        ingest,
         file.filename or "",
         expected_media_revision,
     )

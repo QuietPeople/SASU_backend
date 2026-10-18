@@ -13,21 +13,24 @@ from app.core.config import get_settings
 from app.db.base import Base
 from app.db.models import load_models
 from app.db.session import get_db
+from app.integrations import ffmpeg
 from app.integrations.storage import LocalVideoStorage
-from app.integrations.video_processing import (
-    FFprobeVideoInspector,
-    VideoMetadata,
-    get_video_inspector,
-)
 from app.modules.categories.models import Category
 from app.modules.contents import repository
 from app.modules.contents.models import Content, ContentTag, VideoAsset
 from app.modules.tags.models import Tag
 from app.modules.users.models import User, UserRole
+from app.modules.videos import service as video_processing
+from app.modules.videos.errors import ProbeTimeout, ProcessingFailed
+from app.modules.videos.policy import VideoPolicy
+from app.modules.videos.service import VideoIngestService, get_video_ingest_service
+
+# 파일 시그니처 판별(MP4 계열)은 통과하고 ffprobe 단계까지 가는 최소 입력
+ISO_BMFF_HEAD = b"\x00\x00\x00\x18ftypisom" + b"\x00" * 64
 
 
 @pytest.fixture
-def upload_context(monkeypatch):
+def upload_context(monkeypatch, stub_video_ingest):
     load_models()
     engine = create_engine(
         "sqlite+pysqlite://",
@@ -60,14 +63,10 @@ def upload_context(monkeypatch):
         with factory() as session:
             yield session
 
-    class StubVideoInspector:
-        def inspect(self, stream):
-            # 검증 기능이 스트림을 소비하더라도 파일 저장은 처음부터 수행해야 한다.
-            stream.read()
-            return VideoMetadata(mime_type="video/mp4", duration_seconds=Decimal("12.345"))
-
     monkeypatch.setitem(main.app.dependency_overrides, get_db, provide_session)
-    monkeypatch.setitem(main.app.dependency_overrides, get_video_inspector, StubVideoInspector)
+    monkeypatch.setitem(
+        main.app.dependency_overrides, get_video_ingest_service, stub_video_ingest
+    )
     client = TestClient(main.app)
     try:
         yield client, factory, ids
@@ -160,7 +159,7 @@ def test_empty_draft_response_reports_missing_fields(upload_context):
 
 
 @pytest.mark.parametrize("actor", ["learner", "missing"])
-def test_actor_checks_prevent_database_and_file_writes(upload_context, actor):
+def test_actor_checks_prevent_database_and_file_writes(upload_context, stored_files, actor):
     client, factory, ids = upload_context
     actor_id = ids["learner"] if actor == "learner" else 999
     expected = 403 if actor == "learner" else 404
@@ -171,7 +170,7 @@ def test_actor_checks_prevent_database_and_file_writes(upload_context, actor):
     with factory() as session:
         assert session.scalar(select(func.count()).select_from(Content)) == 1
         assert session.get(Content, content_id).video_asset_id is None
-    assert not get_settings().video_storage_root.exists()
+    assert stored_files() == []
 
 
 @pytest.mark.parametrize(
@@ -190,7 +189,7 @@ def test_missing_references_cancel_creation(upload_context, payload, code):
         assert session.scalar(select(func.count()).select_from(Content)) == 0
 
 
-def test_second_upload_keeps_original_file(upload_context):
+def test_second_upload_keeps_original_file(upload_context, stored_files):
     client, factory, ids = upload_context
     content_id = create_draft(client, ids["admin"])
     first = upload(client, ids["admin"], content_id, b"first")
@@ -198,53 +197,56 @@ def test_second_upload_keeps_original_file(upload_context):
     assert first.status_code == 200
     assert second.status_code == 409
     assert second.json()["detail"]["code"] == "VIDEO_ALREADY_EXISTS"
-    files = list(get_settings().video_storage_root.iterdir())
+    files = stored_files()
     assert len(files) == 1
     assert files[0].read_bytes() == b"first"
     with factory() as session:
         assert session.scalar(select(func.count()).select_from(VideoAsset)) == 1
 
 
-def test_empty_upload_leaves_no_files(upload_context):
+def test_empty_upload_leaves_no_files(upload_context, stored_files):
     client, factory, ids = upload_context
     content_id = create_draft(client, ids["admin"])
-    assert upload(client, ids["admin"], content_id, b"").status_code == 422
-    assert list(get_settings().video_storage_root.iterdir()) == []
+    response = upload(client, ids["admin"], content_id, b"")
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "EMPTY_UPLOAD"
+    assert stored_files() == []
     with factory() as session:
         assert session.get(Content, content_id).video_asset_id is None
         assert session.scalar(select(func.count()).select_from(VideoAsset)) == 0
 
 
-def test_missing_inspection_tool_does_not_write_files_or_assets(upload_context, monkeypatch):
+def test_missing_processing_tool_does_not_write_files_or_assets(
+    upload_context, monkeypatch, stored_files
+):
     client, factory, ids = upload_context
     content_id = create_draft(client, ids["admin"])
-    monkeypatch.setitem(
-        main.app.dependency_overrides,
-        get_video_inspector,
-        lambda: FFprobeVideoInspector(executable="/missing/sasu/ffprobe"),
-    )
-    response = upload(client, ids["admin"], content_id)
+    monkeypatch.delitem(main.app.dependency_overrides, get_video_ingest_service)
+    monkeypatch.setattr(ffmpeg.shutil, "which", lambda name: None)
+    response = upload(client, ids["admin"], content_id, ISO_BMFF_HEAD)
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "VIDEO_PROCESSING_UNAVAILABLE"
-    assert not get_settings().video_storage_root.exists()
+    assert stored_files() == []
     with factory() as session:
         assert session.get(Content, content_id).video_asset_id is None
         assert session.scalar(select(func.count()).select_from(VideoAsset)) == 0
 
 
-def test_invalid_processing_result_does_not_write_files_or_assets(upload_context, monkeypatch):
+def test_conversion_failure_does_not_write_files_or_assets(
+    upload_context, monkeypatch, video_samples, stored_files
+):
     client, factory, ids = upload_context
     content_id = create_draft(client, ids["admin"])
+    monkeypatch.delitem(main.app.dependency_overrides, get_video_ingest_service)
 
-    class InvalidVideoInspector:
-        def inspect(self, stream):
-            return {"mime_type": "video/mp4", "duration_seconds": None}
+    def broken_remux(*args, **kwargs):
+        raise ProcessingFailed("영상을 저장 형식으로 변환하지 못했습니다.")
 
-    monkeypatch.setitem(main.app.dependency_overrides, get_video_inspector, InvalidVideoInspector)
-    response = upload(client, ids["admin"], content_id)
-    assert response.status_code == 502
-    assert response.json()["detail"]["code"] == "INVALID_VIDEO_METADATA"
-    assert not get_settings().video_storage_root.exists()
+    monkeypatch.setattr(video_processing, "remux", broken_remux)
+    response = upload(client, ids["admin"], content_id, video_samples["mp4"].read_bytes())
+    assert response.status_code == 500
+    assert response.json()["detail"]["code"] == "VIDEO_PROCESSING_FAILED"
+    assert stored_files() == []
     with factory() as session:
         assert session.get(Content, content_id).video_asset_id is None
         assert session.scalar(select(func.count()).select_from(VideoAsset)) == 0
@@ -252,7 +254,7 @@ def test_invalid_processing_result_does_not_write_files_or_assets(upload_context
 
 @pytest.mark.parametrize("failure_point", ["flush", "commit"])
 def test_database_failure_rolls_back_and_removes_new_file(
-    upload_context, monkeypatch, failure_point
+    upload_context, monkeypatch, stored_files, failure_point
 ):
     client, factory, ids = upload_context
     content_id = create_draft(client, ids["admin"])
@@ -271,16 +273,16 @@ def test_database_failure_rolls_back_and_removes_new_file(
             event.remove(Session, "before_commit", fail)
     assert response.status_code == 500
     assert "simulated" not in response.text
-    assert list(get_settings().video_storage_root.iterdir()) == []
+    assert stored_files() == []
     with factory() as session:
         assert session.get(Content, content_id).video_asset_id is None
         assert session.scalar(select(func.count()).select_from(VideoAsset)) == 0
 
 
-def test_unknown_content_does_not_create_file(upload_context):
+def test_unknown_content_does_not_create_file(upload_context, stored_files):
     client, factory, ids = upload_context
     assert upload(client, ids["admin"], 999).status_code == 404
-    assert not get_settings().video_storage_root.exists()
+    assert stored_files() == []
 
 
 def test_interrupted_file_copy_cleans_temporary_file(tmp_path):
@@ -288,16 +290,16 @@ def test_interrupted_file_copy_cleans_temporary_file(tmp_path):
         def read(self, size):
             raise OSError("interrupted input")
 
-    storage = LocalVideoStorage(tmp_path)
+    service = VideoIngestService(LocalVideoStorage(tmp_path), VideoPolicy())
     with pytest.raises(OSError, match="interrupted"):
-        storage.save(BrokenStream(b"data"))
+        service.ingest(BrokenStream(b"data"), "a.mp4")
     assert list(tmp_path.iterdir()) == []
 
 
-def test_real_video_upload_uses_default_inspector(upload_context, monkeypatch, video_samples):
+def test_real_video_upload_is_processed_and_stored(upload_context, monkeypatch, video_samples):
     client, factory, ids = upload_context
     content_id = create_draft(client, ids["admin"])
-    monkeypatch.delitem(main.app.dependency_overrides, get_video_inspector)
+    monkeypatch.delitem(main.app.dependency_overrides, get_video_ingest_service)
     original = video_samples["mp4"].read_bytes()
     # filename과 Content-Type 대신 실제 파일 내용으로 검사해야 한다.
     response = client.put(
@@ -312,52 +314,89 @@ def test_real_video_upload_uses_default_inspector(upload_context, monkeypatch, v
         asset = session.get(VideoAsset, content.video_asset_id)
         assert asset.mime_type == "video/mp4"
         assert asset.duration_seconds == Decimal("1.200")
-        assert asset.size_bytes == len(original)
         assert asset.original_name == "renamed.bin"
-        assert (get_settings().video_storage_root / asset.storage_path).read_bytes() == original
+        assert asset.storage_path == f"{asset.video_asset_id.hex}.mp4"
+        stored = get_settings().video_storage_root / asset.storage_path
+        # 웹 재생용으로 정규화(faststart)된 파일이 저장되고, 크기는 저장본 기준이다.
+        assert asset.size_bytes == stored.stat().st_size
+        data = stored.read_bytes()
+        assert 0 <= data.find(b"moov") < data.find(b"mdat")
+
+
+@pytest.mark.parametrize("sample", ["mov", "matroska", "faststart", "fragmented"])
+def test_h264_containers_are_converted_to_mp4(upload_context, monkeypatch, video_samples, sample):
+    client, factory, ids = upload_context
+    content_id = create_draft(client, ids["admin"])
+    monkeypatch.delitem(main.app.dependency_overrides, get_video_ingest_service)
+    response = upload(client, ids["admin"], content_id, video_samples[sample].read_bytes())
+    assert response.status_code == 200, response.text
+    with factory() as session:
+        asset = session.get(VideoAsset, session.get(Content, content_id).video_asset_id)
+        assert asset.mime_type == "video/mp4" and asset.storage_path.endswith(".mp4")
 
 
 @pytest.mark.parametrize(
     "sample,status,code",
     [
-        ("fake", 422, "INVALID_VIDEO"),
+        ("fake", 415, "UNSUPPORTED_MEDIA_TYPE"),
         ("empty", 422, "EMPTY_UPLOAD"),
         ("truncated", 422, "INVALID_VIDEO"),
-        ("audio", 422, "INVALID_VIDEO"),
-        ("mov", 415, "UNSUPPORTED_MEDIA_TYPE"),
-        ("matroska", 422, "INVALID_VIDEO"),
+        ("audio", 415, "UNSUPPORTED_MEDIA_TYPE"),
     ],
 )
 def test_real_invalid_video_does_not_persist(
-    upload_context, monkeypatch, video_samples, sample, status, code
+    upload_context, monkeypatch, video_samples, stored_files, sample, status, code
 ):
     client, factory, ids = upload_context
     content_id = create_draft(client, ids["admin"])
-    monkeypatch.delitem(main.app.dependency_overrides, get_video_inspector)
+    monkeypatch.delitem(main.app.dependency_overrides, get_video_ingest_service)
     response = upload(client, ids["admin"], content_id, video_samples[sample].read_bytes())
     assert response.status_code == status, response.text
     assert response.json()["detail"]["code"] == code
-    assert not get_settings().video_storage_root.exists()
+    assert response.json()["detail"]["fields"][0]["field"] == "file"
+    assert stored_files() == []
     with factory() as session:
         assert session.get(Content, content_id).video_asset_id is None
         assert session.scalar(select(func.count()).select_from(VideoAsset)) == 0
 
 
-def test_video_inspection_timeout_does_not_persist(upload_context, monkeypatch):
-    from app.integrations.video_processing import VideoInspectionTimeoutError
-
+def test_video_inspection_timeout_does_not_persist(
+    upload_context, monkeypatch, video_samples, stored_files
+):
     client, factory, ids = upload_context
     content_id = create_draft(client, ids["admin"])
+    monkeypatch.delitem(main.app.dependency_overrides, get_video_ingest_service)
 
-    class TimedOutInspector:
-        def inspect(self, stream):
-            raise VideoInspectionTimeoutError
+    def timed_out(*args, **kwargs):
+        raise ProbeTimeout("영상 검사 제한 시간을 초과했습니다.")
 
-    monkeypatch.setitem(main.app.dependency_overrides, get_video_inspector, TimedOutInspector)
-    response = upload(client, ids["admin"], content_id)
+    monkeypatch.setattr(video_processing, "probe", timed_out)
+    response = upload(client, ids["admin"], content_id, video_samples["mp4"].read_bytes())
     assert response.status_code == 422
     assert response.json()["detail"]["code"] == "VIDEO_INSPECTION_TIMEOUT"
-    assert not get_settings().video_storage_root.exists()
+    assert stored_files() == []
     with factory() as session:
         assert session.get(Content, content_id).video_asset_id is None
         assert session.scalar(select(func.count()).select_from(VideoAsset)) == 0
+
+
+def test_oversized_request_is_rejected_before_processing(upload_context, monkeypatch, stored_files):
+    client, factory, ids = upload_context
+    content_id = create_draft(client, ids["admin"])
+    monkeypatch.setenv("VIDEO_MAX_MB", "1")
+    get_settings.cache_clear()
+    monkeypatch.delitem(main.app.dependency_overrides, get_video_ingest_service)
+    response = upload(client, ids["admin"], content_id, b"\x00" * (3 * 1024 * 1024))
+    assert response.status_code == 413
+    assert response.json()["detail"]["code"] == "FILE_TOO_LARGE"
+    assert stored_files() == []
+
+
+def test_video_policy_reports_upload_limits(upload_context):
+    client, factory, ids = upload_context
+    response = client.get("/api/contents/video-policy")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["max_bytes"] == 200 * 1024 * 1024
+    assert (body["min_duration_sec"], body["max_duration_sec"]) == (1.0, 180.0)
+    assert ".mp4" in body["accept"]

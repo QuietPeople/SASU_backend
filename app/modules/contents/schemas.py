@@ -148,3 +148,14 @@ class VideoInfo(ApiModel):
     video_duration: Annotated[float, Field(gt=0, allow_inf_nan=False)]
     media_revision: str
     status: ContentStatus
+
+
+class VideoPolicyOut(ApiModel):
+    """영상 업로드 허용 조건(데이터 처리 정책). 화면 안내용."""
+
+    max_bytes: int
+    min_duration_sec: float
+    max_duration_sec: float
+    max_long_edge_px: int
+    accept: str
+    formats: list[str]

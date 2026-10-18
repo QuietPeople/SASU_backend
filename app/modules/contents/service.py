@@ -23,6 +23,9 @@ from app.modules.users.repository import get_user
 from app.modules.users.service import require_admin
 
 
+# 데이터 처리 모듈이 저장하는 형식(MP4 faststart 또는 WebM)
+PLAYABLE_MIME_TYPES = frozenset({"video/mp4", "video/webm"})
+
 def _utc(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value
 
@@ -95,7 +98,7 @@ def _missing(item: repository.Presentation, storage: LocalVideoStorage | None) -
                 path.is_file()
                 and path.stat().st_size == video.size_bytes
                 and video.size_bytes > 0
-                and video.mime_type == "video/mp4"
+                and video.mime_type in PLAYABLE_MIME_TYPES
                 and video.duration_seconds.is_finite()
                 and video.duration_seconds > 0
             )
