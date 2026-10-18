@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     db_echo: bool = False
     db_connect_timeout: int = Field(default=5, ge=1, le=60)
     video_storage_root: Path = PROJECT_ROOT / "storage" / "videos"
+    # 영상 업로드 정책(데이터 처리). 숏폼 기준 제안값이며 .env로 바꿀 수 있다.
+    video_max_mb: int = Field(default=200, ge=1, le=2048)
+    video_min_seconds: float = Field(default=1.0, gt=0)
+    video_max_seconds: float = Field(default=180.0, gt=0)
 
     @field_validator("video_storage_root")
     @classmethod

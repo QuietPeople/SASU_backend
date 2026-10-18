@@ -104,5 +104,6 @@ def test_openapi_distinguishes_json_upload_and_binary_download(client):
     video = schema["paths"]["/api/contents/{content_id}/video"]
     assert "multipart/form-data" in video["put"]["requestBody"]["content"]
     for code in ("200", "206"):
-        assert set(video["get"]["responses"][code]["content"]) == {"video/mp4"}
+        # 데이터 처리 모듈이 MP4(faststart) 또는 WebM으로 저장한다.
+        assert set(video["get"]["responses"][code]["content"]) == {"video/mp4", "video/webm"}
     assert "201" in schema["paths"]["/api/contents"]["post"]["responses"]

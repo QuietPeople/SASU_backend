@@ -8,7 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# 영상 파일의 컨테이너·스트림·길이 검사에 ffprobe를 사용한다.
+# ffmpeg/ffprobe: 업로드 영상의 형식·길이 분석과 웹 재생용 정규화(faststart)에 사용한다.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
