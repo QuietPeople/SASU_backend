@@ -13,10 +13,12 @@ from app.core.config import get_settings
 from app.db.base import Base
 from app.db.models import load_models
 from app.db.session import get_db
+from app.integrations.storage import LocalVideoStorage
 from app.modules.categories.models import Category
 from app.modules.contents import read_tables as reads
-from app.modules.contents import repository
+from app.modules.contents import repository, video_service
 from app.modules.contents.models import Content, ContentTag, VideoAsset
+from app.modules.contents.schemas import VideoQuery
 from app.modules.tags.models import Tag
 from app.modules.users.models import User, UserRole
 from app.modules.videos.service import get_video_ingest_service
@@ -438,6 +440,59 @@ def test_replacement_requires_current_revision_and_removes_old_file(context, pub
         assert session.scalar(select(func.count()).select_from(VideoAsset)) == 2
 
 
+@pytest.mark.parametrize("public", [False, True])
+def test_other_replacement_completed_during_processing_keeps_winner(
+    context, monkeypatch, stub_video_ingest, public
+):
+    ctx = context
+    content_id = published(ctx) if public else draft(ctx)
+    if not public:
+        assert upload(ctx, content_id).status_code == 200
+    before = editor(ctx, content_id).json()
+    revision = before["detail"]["content"]["media_revision"]
+
+    class InterleavedIngest(stub_video_ingest):
+        def ingest(self, src, original_name):
+            result = super().ingest(src, original_name)
+            monkeypatch.setitem(
+                main.app.dependency_overrides, get_video_ingest_service, stub_video_ingest
+            )
+            winner = upload(ctx, content_id, b"winner", revision)
+            assert winner.status_code == 200, winner.text
+            return result
+
+    monkeypatch.setitem(
+        main.app.dependency_overrides, get_video_ingest_service, InterleavedIngest
+    )
+    response = upload(ctx, content_id, b"loser", revision)
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "VIDEO_CHANGED"
+    assert [path.read_bytes() for path in ctx.root.iterdir()] == [b"winner"]
+    after = editor(ctx, content_id).json()
+    assert after["detail"]["published_at"] == before["detail"]["published_at"]
+    assert after["detail"]["content"]["status"] == before["detail"]["content"]["status"]
+    with ctx.factory() as session:
+        assert session.scalar(select(func.count()).select_from(VideoAsset)) == 2
+
+
+def test_active_playback_survives_replacement(context):
+    ctx = context
+    content_id = published(ctx)
+    revision = editor(ctx, content_id).json()["detail"]["content"]["media_revision"]
+    old_path = next(ctx.root.iterdir())
+    with ctx.factory() as session:
+        stream = video_service.get_video(
+            session, content_id, VideoQuery(), LocalVideoStorage(ctx.root), None
+        )
+    try:
+        assert upload(ctx, content_id, b"new-video", revision).status_code == 200
+        assert not old_path.exists()
+        assert b"".join(stream.chunks()) == b"original-video"
+    finally:
+        stream.close()
+    assert [path.read_bytes() for path in ctx.root.iterdir()] == [b"new-video"]
+
+
 @pytest.mark.parametrize("failure", ["inspection", "after_flush", "commit"])
 def test_failed_replacement_keeps_old_connection_and_file(context, monkeypatch, failure):
     ctx = context
@@ -446,26 +501,40 @@ def test_failed_replacement_keeps_old_connection_and_file(context, monkeypatch, 
     revision = before["detail"]["content"]["media_revision"]
     old_path = next(ctx.root.iterdir())
     original_attach = repository.attach_video
+    attempted = []
+    commit_failures = []
 
-    def fail_attach(*args, **kwargs):
-        original_attach(*args, **kwargs)
-        raise SQLAlchemyError("private database failure")
+    def attach_then_fail(session, content, asset):
+        original_attach(session, content, asset)
+        new_path = ctx.root / asset.storage_path
+        assert new_path.is_file() and old_path.is_file()
+        attempted.append((asset.video_asset_id, new_path))
+        if failure == "after_flush":
+            raise SQLAlchemyError("private database failure")
 
-    def fail_commit(*args, **kwargs):
-        raise SQLAlchemyError("private commit failure")
+    def fail_commit(session):
+        if attempted:
+            asset_id, new_path = attempted[0]
+            assert new_path.is_file() and old_path.is_file()
+            assert session.get(Content, content_id).video_asset_id == asset_id
+            commit_failures.append(asset_id)
+            raise SQLAlchemyError("private commit failure")
 
     if failure == "inspection":
         # 실제 데이터 처리: 영상이 아닌 바이트는 시그니처 판별에서 415로 거절된다.
         monkeypatch.delitem(main.app.dependency_overrides, get_video_ingest_service)
-    elif failure == "after_flush":
-        monkeypatch.setattr(repository, "attach_video", fail_attach)
     else:
-        event.listen(Session, "before_commit", fail_commit)
+        monkeypatch.setattr(repository, "attach_video", attach_then_fail)
+        if failure == "commit":
+            event.listen(Session, "before_commit", fail_commit)
     try:
         response = upload(ctx, content_id, b"invalid or new file", revision)
     finally:
         if failure == "commit":
             event.remove(Session, "before_commit", fail_commit)
+    assert len(attempted) == (0 if failure == "inspection" else 1)
+    if failure == "commit":
+        assert commit_failures == [attempted[0][0]]
     assert response.status_code == (415 if failure == "inspection" else 500), response.text
     assert "private" not in response.text
     assert editor(ctx, content_id).json() == before
