@@ -18,22 +18,21 @@ from app.modules.contents.schemas import (
     ContentUpdate,
     EditableContent,
 )
+from app.modules.contents.urls import build_video_url
 from app.modules.users.models import UserRole
 from app.modules.users.repository import get_user
-from app.modules.users.service import require_admin
-
+from app.modules.users.service import get_actor, require_admin
 
 # 데이터 처리 모듈이 저장하는 형식(MP4 faststart 또는 WebM)
 PLAYABLE_MIME_TYPES = frozenset({"video/mp4", "video/webm"})
+
 
 def _utc(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value
 
 
 def _reader(session: Session, actor_id: int, user_id: int | None):
-    actor = get_user(session, actor_id)
-    if actor is None:
-        raise ApiError(404, "USER_NOT_FOUND", "행위자 사용자가 없습니다.")
+    actor = get_actor(session, actor_id)
     if actor.role == UserRole.LEARNER:
         if user_id is not None and user_id != actor_id:
             raise ApiError(404, "USER_NOT_FOUND", "조회 가능한 학습자가 없습니다.")
@@ -50,9 +49,11 @@ def _summary(item: repository.Presentation, actor_id: int) -> ContentSummary:
     revision = str(video.video_asset_id) if video else None
     url = None
     if video:
-        url = f"/api/contents/{content.content_id}/video?revision={revision}"
-        if content.status == ContentStatus.DRAFT:
-            url += f"&preview=true&actor_id={actor_id}"
+        url = build_video_url(
+            content.content_id,
+            revision,
+            preview_actor_id=actor_id if content.status == ContentStatus.DRAFT else None,
+        )
     return ContentSummary(
         content_id=content.content_id,
         title=content.title,
