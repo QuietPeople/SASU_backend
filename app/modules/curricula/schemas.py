@@ -1,13 +1,10 @@
 """커리큘럼 API 계약. 단계 키는 과정 안의 content_id로 대응한다."""
 
-from typing import Annotated, Literal
-
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.api.schemas import PageQuery, ViewQuery
-from app.core.security import MAX_BIGINT
-
-PositiveId = Annotated[int, Field(gt=0, le=MAX_BIGINT)]
+from app.core.types import PositiveId
+from app.modules.contents.schemas import ContentSummary
 
 
 class CurriculumQuery(ViewQuery):
@@ -42,33 +39,6 @@ class StepsInput(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     content_ids: list[PositiveId]
-
-
-class Category(BaseModel):
-    category_id: int
-    name: str
-
-
-class Tag(BaseModel):
-    tag_id: int
-    name: str
-
-
-class ContentSummary(BaseModel):
-    content_id: int
-    title: str | None
-    category: Category | None
-    tags: list[Tag]
-    video_duration: float | None
-    video_url: str | None
-    media_revision: str | None
-    view_count: int
-    like_count: int
-    liked: bool | None
-    saved: bool | None
-    watch_completed: bool | None
-    has_quiz: bool
-    status: Literal["DRAFT", "PUBLISHED"]
 
 
 class CurriculumSummary(BaseModel):
