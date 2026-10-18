@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     db_echo: bool = False
     db_connect_timeout: int = Field(default=5, ge=1, le=60)
     video_storage_root: Path = PROJECT_ROOT / "storage" / "videos"
+    # 영상 업로드 정책. 숏폼 기준 제안값이며 .env에서 조정한다.
+    video_max_mb: int = Field(default=200, ge=1, le=2048)
+    video_min_seconds: float = Field(default=1.0, gt=0)
+    video_max_seconds: float = Field(default=180.0, gt=0)
+    # 콘텐츠 작성자로 기록할 고정 관리자 계정(app_users.username). 로그인은 구현하지 않는다.
+    admin_username: str = Field(default="admin", min_length=1)
 
     @field_validator("video_storage_root")
     @classmethod

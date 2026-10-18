@@ -22,6 +22,10 @@ def isolate_settings(monkeypatch, tmp_path):
         "DB_ECHO",
         "DB_CONNECT_TIMEOUT",
         "VIDEO_STORAGE_ROOT",
+        "VIDEO_MAX_MB",
+        "VIDEO_MIN_SECONDS",
+        "VIDEO_MAX_SECONDS",
+        "ADMIN_USERNAME",
     ):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("DB_PASSWORD", "sasu-test-password")

@@ -8,6 +8,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# ffmpeg/ffprobe: 업로드 영상의 형식·길이 분석과 재인코딩 없는 정규화(faststart)에 사용한다.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt ./
 # requirements 변경 시에만 설치 레이어를 다시 만들고 다운로드 캐시를 재사용한다.
 # 설치나 의존성 검사 실패는 빌드를 실패시킨다.

@@ -18,6 +18,10 @@ services:
       DB_ECHO: ${DB_ECHO:-false}
       DB_CONNECT_TIMEOUT: ${DB_CONNECT_TIMEOUT:-5}
       VIDEO_STORAGE_ROOT: /app/storage/videos
+      VIDEO_MAX_MB: ${VIDEO_MAX_MB:-200}
+      VIDEO_MIN_SECONDS: ${VIDEO_MIN_SECONDS:-1}
+      VIDEO_MAX_SECONDS: ${VIDEO_MAX_SECONDS:-180}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
     volumes:
       - ./app:/app/app
       - ./tests:/app/tests
