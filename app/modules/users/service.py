@@ -9,13 +9,27 @@ from app.modules.users.models import UserRole
 from app.modules.users.schemas import User, UserList
 
 
-def require_admin(session: Session, actor_id: int) -> UserModel:
-    """호출 서비스의 트랜잭션 안에서 사용한다. 실제 로그인 인증은 아니다."""
+def get_actor(
+    session: Session,
+    actor_id: int,
+    *,
+    not_found_message: str = "행위자 사용자가 없습니다.",
+) -> UserModel:
     actor = repository.get_user(session, actor_id)
     if actor is None:
-        raise ApiError(404, "USER_NOT_FOUND", "행위자 사용자가 없습니다.")
-    if actor.role != UserRole.ADMIN:
-        raise ApiError(403, "ROLE_NOT_ALLOWED", "관리자만 수행할 수 있습니다.")
+        raise ApiError(404, "USER_NOT_FOUND", not_found_message)
+    return actor
+
+
+def check_admin_role(role: str, *, message: str = "관리자만 수행할 수 있습니다.") -> None:
+    if role != UserRole.ADMIN:
+        raise ApiError(403, "ROLE_NOT_ALLOWED", message)
+
+
+def require_admin(session: Session, actor_id: int) -> UserModel:
+    """호출 서비스의 트랜잭션 안에서 사용한다. 실제 로그인 인증은 아니다."""
+    actor = get_actor(session, actor_id)
+    check_admin_role(actor.role)
     return actor
 
 
