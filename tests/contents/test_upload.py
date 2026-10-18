@@ -204,6 +204,33 @@ def test_second_upload_keeps_original_file(upload_context, stored_files):
         assert session.scalar(select(func.count()).select_from(VideoAsset)) == 1
 
 
+def test_other_upload_completed_during_processing_keeps_winner(
+    upload_context, monkeypatch, stored_files, stub_video_ingest
+):
+    client, factory, ids = upload_context
+    content_id = create_draft(client, ids["admin"])
+
+    class InterleavedIngest(stub_video_ingest):
+        def ingest(self, src, original_name):
+            result = super().ingest(src, original_name)
+            monkeypatch.setitem(
+                main.app.dependency_overrides, get_video_ingest_service, stub_video_ingest
+            )
+            winner = upload(client, ids["admin"], content_id, b"winner")
+            assert winner.status_code == 200, winner.text
+            return result
+
+    monkeypatch.setitem(
+        main.app.dependency_overrides, get_video_ingest_service, InterleavedIngest
+    )
+    response = upload(client, ids["admin"], content_id, b"loser")
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "VIDEO_ALREADY_EXISTS"
+    assert [path.read_bytes() for path in stored_files()] == [b"winner"]
+    with factory() as session:
+        assert session.scalar(select(func.count()).select_from(VideoAsset)) == 1
+
+
 def test_empty_upload_leaves_no_files(upload_context, stored_files):
     client, factory, ids = upload_context
     content_id = create_draft(client, ids["admin"])
@@ -258,19 +285,41 @@ def test_database_failure_rolls_back_and_removes_new_file(
 ):
     client, factory, ids = upload_context
     content_id = create_draft(client, ids["admin"])
+    original_attach = repository.attach_video
+    attempted = []
+    failures = []
 
-    def fail(*args, **kwargs):
+    def fail(session):
+        asset_id, path = attempted[0]
+        assert path.is_file()
+        assert session.get(Content, content_id).video_asset_id == asset_id
+        assert session.get(VideoAsset, asset_id) is not None
+        failures.append(asset_id)
         raise SQLAlchemyError("simulated persistence failure")
 
-    if failure_point == "flush":
-        monkeypatch.setattr(repository, "attach_video", fail)
-    else:
-        event.listen(Session, "before_commit", fail)
+    def attach_then_fail(session, content, asset):
+        original_attach(session, content, asset)
+        attempted.append(
+            (asset.video_asset_id, get_settings().video_storage_root / asset.storage_path)
+        )
+        if failure_point == "flush":
+            fail(session)
+
+    def fail_final_commit(session):
+        # 사전 확인 트랜잭션은 통과하고, 파일·자산 연결 후 커밋에서만 실패한다.
+        if attempted:
+            fail(session)
+
+    monkeypatch.setattr(repository, "attach_video", attach_then_fail)
+    if failure_point == "commit":
+        event.listen(Session, "before_commit", fail_final_commit)
     try:
         response = upload(client, ids["admin"], content_id)
     finally:
         if failure_point == "commit":
-            event.remove(Session, "before_commit", fail)
+            event.remove(Session, "before_commit", fail_final_commit)
+    assert len(attempted) == 1
+    assert failures == [attempted[0][0]]
     assert response.status_code == 500
     assert "simulated" not in response.text
     assert stored_files() == []
