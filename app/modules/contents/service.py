@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import ApiError
 from app.integrations.storage import LocalVideoStorage
 from app.modules.contents import repository
-from app.modules.contents.models import Content, ContentStatus
+from app.modules.contents.models import Content, ContentStatus, VideoAsset
 from app.modules.contents.schemas import (
     ContentCreate,
     ContentDetail,
@@ -44,7 +44,7 @@ def _reader(session: Session, actor_id: int, user_id: int | None):
     return actor, user_id
 
 
-def _summary(item: repository.Presentation, actor_id: int) -> ContentSummary:
+def build_content_summary(item: repository.Presentation, actor_id: int) -> ContentSummary:
     content, video, category = item.content, item.video, item.category
     revision = str(video.video_asset_id) if video else None
     url = None
@@ -75,7 +75,7 @@ def _summary(item: repository.Presentation, actor_id: int) -> ContentSummary:
 def _detail(item: repository.Presentation, actor_id: int, related: list[dict]) -> ContentDetail:
     content = item.content
     return ContentDetail(
-        content=_summary(item, actor_id),
+        content=build_content_summary(item, actor_id),
         core_content=content.core_content,
         one_line_summary=re.split(r"(?<=[.!?。！？])\s+|\n", content.core_content, maxsplit=1)[0]
         if content.core_content
@@ -89,22 +89,26 @@ def _detail(item: repository.Presentation, actor_id: int, related: list[dict]) -
     )
 
 
+def is_video_available(video: VideoAsset | None, storage: LocalVideoStorage) -> bool:
+    if video is None:
+        return False
+    try:
+        path = storage.resolve_path(video.storage_path)
+        return (
+            path.is_file()
+            and path.stat().st_size == video.size_bytes
+            and video.size_bytes > 0
+            and video.mime_type in PLAYABLE_MIME_TYPES
+            and video.duration_seconds.is_finite()
+            and video.duration_seconds > 0
+        )
+    except (OSError, ValueError):
+        return False
+
+
 def _missing(item: repository.Presentation, storage: LocalVideoStorage | None) -> list[str]:
     content, video = item.content, item.video
-    video_valid = video is not None
-    if video_valid and storage is not None:
-        try:
-            path = storage.resolve_path(video.storage_path)
-            video_valid = (
-                path.is_file()
-                and path.stat().st_size == video.size_bytes
-                and video.size_bytes > 0
-                and video.mime_type in PLAYABLE_MIME_TYPES
-                and video.duration_seconds.is_finite()
-                and video.duration_seconds > 0
-            )
-        except (OSError, ValueError):
-            video_valid = False
+    video_valid = video is not None if storage is None else is_video_available(video, storage)
     fields = {
         "video": video_valid,
         "title": content.title,
@@ -198,7 +202,7 @@ def list_contents(session: Session, actor_id: int, query: ContentListQuery) -> C
             contents, total = repository.list_contents(session, query, status)
             items = repository.load_presentations(session, contents, target_id)
             return ContentPage(
-                items=[_summary(item, actor_id) for item in items],
+                items=[build_content_summary(item, actor_id) for item in items],
                 page=query.page,
                 size=query.size,
                 total=total,

@@ -20,6 +20,7 @@ from app.modules.contents import repository, video_service
 from app.modules.contents.models import Content, ContentTag, VideoAsset
 from app.modules.contents.schemas import VideoQuery
 from app.modules.likes.tables import content_likes
+from app.modules.saved_contents.tables import saved_contents
 from app.modules.tags.models import Tag
 from app.modules.users.models import User, UserRole
 from app.modules.videos.service import get_video_ingest_service
@@ -44,6 +45,7 @@ def context(monkeypatch, stub_video_ingest):
     # 실제 PostgreSQL에서는 Alembic의 전체 테이블과 content_metrics 뷰를 검증한다.
     reads.metadata.create_all(engine)
     content_likes.create(engine)
+    saved_contents.create(engine)
     factory = sessionmaker(engine, expire_on_commit=False)
     with factory() as session, session.begin():
         admin = User(username="admin", display_name="관리자", role=UserRole.ADMIN)
@@ -307,7 +309,9 @@ def test_counts_personal_state_quiz_and_related_curriculums(context):
             )
         )
         session.execute(
-            reads.saved_contents.insert().values(user_id=ctx.ids["learner"], content_id=content_id)
+            saved_contents.insert().values(
+                user_id=ctx.ids["learner"], content_id=content_id, learning_epoch=1
+            )
         )
         session.execute(
             reads.watch_records.insert().values(
@@ -337,6 +341,18 @@ def test_counts_personal_state_quiz_and_related_curriculums(context):
     ).json()
     assert other["content"]["liked"] is False
     assert other["content"]["like_count"] == 2
+    assert target["content"]["saved"] is True
+    other = ctx.client.get(
+        f"/api/contents/{content_id}", headers={"X-Actor-Id": str(ctx.ids["other"])}
+    ).json()
+    assert other["content"]["saved"] is False
+    with ctx.factory() as session, session.begin():
+        session.execute(saved_contents.delete().where(saved_contents.c.content_id == content_id))
+    after = ctx.client.get(
+        f"/api/contents/{content_id}", headers={"X-Actor-Id": str(ctx.ids["learner"])}
+    ).json()
+    assert after["content"]["saved"] is False
+    assert after["content"]["liked"] is True
 
 
 @pytest.mark.parametrize(
