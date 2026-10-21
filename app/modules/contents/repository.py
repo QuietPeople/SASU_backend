@@ -8,6 +8,7 @@ from app.modules.categories.models import Category
 from app.modules.contents import read_tables as reads
 from app.modules.contents.models import Content, ContentTag, VideoAsset
 from app.modules.contents.schemas import ContentListQuery
+from app.modules.likes.tables import content_likes
 from app.modules.tags.models import Tag
 
 
@@ -132,7 +133,7 @@ def load_presentations(
             func.coalesce(reads.content_metrics.c.view_count, 0),
             func.coalesce(reads.content_metrics.c.like_count, 0),
             quiz_exists,
-            personal(reads.content_likes),
+            personal(content_likes),
             personal(reads.saved_contents),
             personal(reads.watch_records, reads.watch_records.c.completed_at.is_not(None)),
         )
