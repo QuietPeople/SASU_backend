@@ -19,6 +19,7 @@ from app.modules.contents import read_tables as reads
 from app.modules.contents import repository, video_service
 from app.modules.contents.models import Content, ContentTag, VideoAsset
 from app.modules.contents.schemas import VideoQuery
+from app.modules.likes.tables import content_likes
 from app.modules.tags.models import Tag
 from app.modules.users.models import User, UserRole
 from app.modules.videos.service import get_video_ingest_service
@@ -42,6 +43,7 @@ def context(monkeypatch, stub_video_ingest):
     # 읽기 참조용 최소 테이블은 SQLite 테스트 안에서만 만든다.
     # 실제 PostgreSQL에서는 Alembic의 전체 테이블과 content_metrics 뷰를 검증한다.
     reads.metadata.create_all(engine)
+    content_likes.create(engine)
     factory = sessionmaker(engine, expire_on_commit=False)
     with factory() as session, session.begin():
         admin = User(username="admin", display_name="관리자", role=UserRole.ADMIN)
@@ -300,7 +302,9 @@ def test_counts_personal_state_quiz_and_related_curriculums(context):
             reads.content_metrics.insert().values(content_id=content_id, view_count=7, like_count=2)
         )
         session.execute(
-            reads.content_likes.insert().values(user_id=ctx.ids["learner"], content_id=content_id)
+            content_likes.insert().values(
+                user_id=ctx.ids["learner"], content_id=content_id, learning_epoch=1
+            )
         )
         session.execute(
             reads.saved_contents.insert().values(user_id=ctx.ids["learner"], content_id=content_id)
@@ -328,6 +332,11 @@ def test_counts_personal_state_quiz_and_related_curriculums(context):
         f"/api/contents/{content_id}?user_id={ctx.ids['learner']}", headers=ctx.headers
     ).json()
     assert target["content"]["liked"] is True
+    other = ctx.client.get(
+        f"/api/contents/{content_id}", headers={"X-Actor-Id": str(ctx.ids["other"])}
+    ).json()
+    assert other["content"]["liked"] is False
+    assert other["content"]["like_count"] == 2
 
 
 @pytest.mark.parametrize(
