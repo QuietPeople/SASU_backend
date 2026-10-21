@@ -16,7 +16,7 @@ from app.modules.questions.schemas import (
 )
 
 
-def validate_options(request: QuestionInput) -> None:
+def validate_options(request: QuestionInput | QuestionVersion) -> None:
     count = {"OX": 2, "MCQ_3": 3, "MCQ_4": 4}[request.question_type]
     options = sorted(request.options, key=lambda option: option.option_order)
     if (
