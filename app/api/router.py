@@ -10,6 +10,7 @@ from app.modules.curricula.router import router as curricula_router
 from app.modules.likes.router import router as likes_router
 from app.modules.questions.router import router as questions_router
 from app.modules.responses.router import router as responses_router
+from app.modules.reviews.router import router as reviews_router
 from app.modules.system.router import router as system_router
 from app.modules.tags.router import router as tags_router
 from app.modules.users.router import router as users_router
@@ -26,3 +27,4 @@ api_router.include_router(likes_router)
 api_router.include_router(system_router)
 api_router.include_router(users_router)
 api_router.include_router(responses_router)
+api_router.include_router(reviews_router)
