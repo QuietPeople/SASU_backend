@@ -140,22 +140,27 @@ def published_content(database, seed):
 
 @pytest.fixture
 def published_quiz(database, published_content):
-    """공개 콘텐츠에 퀴즈·버전 삽입. (quiz_id, quiz_version_id) 반환."""
+    """공개 콘텐츠에 퀴즈·버전·보기 삽입. (quiz_id, quiz_version_id, content_id) 반환."""
     content_id = published_content["content_id"]
     quiz_id = database.scalar(
-        text(
-            "INSERT INTO sasu.quizzes (content_id, quiz_type)"
-            " VALUES (:cid, 'MULTIPLE_CHOICE') RETURNING quiz_id"
-        ),
+        text("INSERT INTO sasu.quizzes (content_id) VALUES (:cid) RETURNING quiz_id"),
         {"cid": content_id},
     )
     version_id = database.scalar(
         text(
-            "INSERT INTO sasu.quiz_versions (quiz_id, question_text, choices, answer_index)"
-            " VALUES (:qid, '문제?', '[\"A\",\"B\"]'::jsonb, 0) RETURNING quiz_version_id"
+            "INSERT INTO sasu.quiz_versions (quiz_id, version_no, question_text, explanation)"
+            " VALUES (:qid, 1, '문제?', '해설') RETURNING quiz_version_id"
         ),
         {"qid": quiz_id},
     )
+    for pos, text_val, correct in [(1, "A", True), (2, "B", False), (3, "C", False)]:
+        database.execute(
+            text(
+                "INSERT INTO sasu.quiz_options (quiz_version_id, position, option_text, is_correct)"
+                " VALUES (:vid, :pos, :txt, :ok)"
+            ),
+            {"vid": version_id, "pos": pos, "txt": text_val, "ok": correct},
+        )
     database.execute(
         text("UPDATE sasu.quizzes SET current_version_id = :vid WHERE quiz_id = :qid"),
         {"vid": version_id, "qid": quiz_id},
