@@ -11,9 +11,13 @@ from app.modules.likes.router import router as likes_router
 from app.modules.questions.router import router as questions_router
 from app.modules.responses.router import router as responses_router
 from app.modules.reviews.router import router as reviews_router
+from app.modules.saved_contents.router import router as saved_contents_router
 from app.modules.system.router import router as system_router
 from app.modules.tags.router import router as tags_router
 from app.modules.users.router import router as users_router
+from app.modules.events.router import router as events_router
+from app.modules.users.settings_router import router as user_settings_router
+from app.modules.watch_records.router import router as watch_records_router
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(admin_router)
@@ -24,7 +28,11 @@ api_router.include_router(tags_router)
 api_router.include_router(questions_router)
 api_router.include_router(curricula_router)
 api_router.include_router(likes_router)
+api_router.include_router(saved_contents_router)
 api_router.include_router(system_router)
 api_router.include_router(users_router)
+api_router.include_router(user_settings_router)
+api_router.include_router(watch_records_router)
+api_router.include_router(events_router)
 api_router.include_router(responses_router)
 api_router.include_router(reviews_router)
