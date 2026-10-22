@@ -35,12 +35,6 @@ curriculum_items = Table(
     Column("curriculum_id", BigInteger),
     Column("content_id", BigInteger),
 )
-saved_contents = Table(
-    "saved_contents",
-    metadata,
-    Column("user_id", BigInteger),
-    Column("content_id", BigInteger),
-)
 watch_records = Table(
     "watch_records",
     metadata,
