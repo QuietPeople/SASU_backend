@@ -12,6 +12,7 @@ from app.modules.responses.router import router as responses_router
 from app.modules.system.router import router as system_router
 from app.modules.tags.router import router as tags_router
 from app.modules.users.router import router as users_router
+from app.modules.events.router import router as events_router
 from app.modules.users.settings_router import router as user_settings_router
 from app.modules.watch_records.router import router as watch_records_router
 
@@ -27,4 +28,5 @@ api_router.include_router(system_router)
 api_router.include_router(users_router)
 api_router.include_router(user_settings_router)
 api_router.include_router(watch_records_router)
+api_router.include_router(events_router)
 api_router.include_router(responses_router)
