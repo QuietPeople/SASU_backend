@@ -153,17 +153,17 @@ def stats(client, r, suffix=""):
 def test_empty_statistics_and_dashboard(client, records):
     r = records
     s = stats(client, r)
-    assert s["quiz"]["accuracy"] == {"numerator": 0, "denominator": 0, "percent": None}
+    assert s["quiz"]["first_accuracy"] == {"numerator": 0, "denominator": 0, "percent": None}
     assert s["quiz"]["first_accuracy"]["percent"] is None
     assert s["reactions"]["watch_completion"]["percent"] is None
     response = client.get(f"/api/users/{r['user1']}/dashboard", headers=headers(r, "user1"))
     assert response.status_code == 200, response.text
-    assert response.json()["in_progress_curriculums"] == []
+    assert response.json()["curriculums"] == []
     response = client.get(
         f"/api/users/{r['user1']}/dashboard/categories", headers=headers(r, "user1")
     )
     assert response.status_code == 200, response.text
-    assert response.json()["items"][0]["state"] == "NOT_STARTED"
+    assert response.json()["items"][0]["state"] == "NO_PENDING_WRONG"
 
 
 def test_first_answer_repeat_skip_and_actual_display(client, database, records):
@@ -174,11 +174,8 @@ def test_first_answer_repeat_skip_and_actual_display(client, database, records):
     answer(database, r, "VIDEO_END", None)
     s = stats(client, r)["quiz"]
     assert s["first_accuracy"] == {"numerator": 0, "denominator": 1, "percent": 0.0}
-    assert s["accuracy"]["percent"] == 50
-    assert s["participation"] == {"numerator": 1, "denominator": 3, "percent": 33.33}
-    assert s["unanswered_display_count"] == 1
-    assert s["response_without_display_count"] == 1
-    assert s["skip_rate"]["percent"] == 33.33
+    assert s["participation"] == {"numerator": 2, "denominator": 3, "percent": 66.67}
+    assert s["skipped_count"] == 1
     answer(database, r, "FEED_REVIEW", "WRONG")
     answer(database, r, "FEED_REVIEW", "CORRECT")
     answer(database, r, "FEED_REVIEW", "CORRECT")
@@ -230,17 +227,15 @@ def test_wrong_cards_and_reset(client, database, records):
     )
     s = stats(client, r)
     assert s["flashcards"] == {
-        "opened_count": 2,
-        "revealed_count": 1,
-        "opened_users": 1,
-        "revealed_users": 1,
+        "viewed_count": 2,
+        "flipped_count": 1,
     }
-    assert s["wrong_review"]["current_unresolved_count"] == 1
+    assert s["wrong_review"]["pending_count"] == 1
     assert s["reactions"]["view_count"] == 1
     dash = client.get(f"/api/users/{r['user1']}/dashboard", headers=headers(r)).json()
-    assert dash["in_progress_curriculums"][0]["completed_steps"] == 0
+    assert dash["curriculums"] == []
     answer(database, r, "WRONG_REVIEW", "CORRECT")
-    assert stats(client, r)["wrong_review"]["resolved_version_count"] == 1
+    assert stats(client, r)["wrong_review"]["resolved_count"] == 1
     progress = client.get(
         f"/api/users/{r['user1']}/curriculums/{r['curriculum']}/progress", headers=headers(r)
     )
@@ -259,11 +254,15 @@ def test_wrong_cards_and_reset(client, database, records):
         == s["reactions"]["saved_count"]
         == 0
     )
-    assert s["quiz"]["accuracy"]["percent"] is None
-    assert s["flashcards"]["opened_count"] == 0
+    assert s["quiz"]["first_accuracy"]["percent"] is None
+    assert s["flashcards"]["viewed_count"] == 0
     dash = client.get(f"/api/users/{r['user1']}/dashboard", headers=headers(r)).json()
-    assert dash["record_generation"] == 1
-    assert dash["watched_count"] == dash["answered_count"] == dash["current_wrong_count"] == 0
+    assert (
+        dash["watched_content_count"]
+        == dash["answered_count"]
+        == dash["pending_question_count"]
+        == 0
+    )
     progress = client.get(
         f"/api/users/{r['user1']}/curriculums/{r['curriculum']}/progress", headers=headers(r)
     ).json()
@@ -322,12 +321,12 @@ def test_latest_wrong_only_and_private_category(client, database, records):
     answer(database, r, "VIDEO_END", "WRONG")
     execute(database, "UPDATE sasu.contents SET status='DRAFT' WHERE content_id=:c", c=r["content"])
     database.commit()
-    assert stats(client, r)["wrong_review"]["current_unresolved_count"] == 0
+    assert stats(client, r)["wrong_review"]["pending_count"] == 1
     categories = client.get(
         f"/api/users/{r['user1']}/dashboard/categories", headers=headers(r)
     ).json()
-    assert categories["items"][0]["current_wrong_count"] == 0
-    assert categories["items"][0]["published_content_count"] == 0
+    assert categories["items"][0]["pending_question_count"] == 0
+    assert categories["items"][0]["state"] == "NO_PENDING_WRONG"
     assert execute(database, "SELECT count(*) FROM sasu.wrong_answers").scalar_one() == 1
 
 
@@ -369,13 +368,13 @@ def test_version_change_preserves_history_but_hides_old_wrong(client, database, 
         q=r["quiz"],
     )
     database.commit()
-    assert stats(client, r)["wrong_review"]["current_unresolved_count"] == 0
+    assert stats(client, r)["wrong_review"]["pending_count"] == 0
     # 과거 버전의 응답·오답 상태는 그대로 남고 최초 풀이 통계도 유지된다.
     assert stats(client, r)["quiz"]["first_accuracy"]["denominator"] == 1
     row = execute(database, "SELECT status,quiz_version_id FROM sasu.wrong_answers").one()
     assert row.status == "UNRESOLVED" and row.quiz_version_id == r["version"]
     history = client.get("/api/responses", headers=headers(r)).json()
-    assert history["items"][0]["quiz_version_id"] == r["version"]
+    assert history["items"][0]["question"]["question_version_id"] == r["version"]
 
 
 def test_multiuser_counts_do_not_multiply(client, database, records):
@@ -403,7 +402,7 @@ def test_multiuser_counts_do_not_multiply(client, database, records):
     assert s["reactions"]["view_count"] == 2 and s["reactions"]["like_count"] == 2
     assert s["quiz"]["first_accuracy"] == {"numerator": 1, "denominator": 2, "percent": 50.0}
     own = client.get(f"/api/users/{r['user1']}/dashboard", headers=headers(r, "user1")).json()
-    assert own["watched_count"] == own["answered_count"] == own["liked_count"] == 1
+    assert own["watched_content_count"] == own["answered_count"] == 1
     assert own["first_quiz_accuracy"]["percent"] == 0
     peer = client.get(f"/api/users/{r['other']}/dashboard", headers=headers(r)).json()
     assert peer["first_quiz_accuracy"]["percent"] == 100
@@ -444,7 +443,7 @@ def test_curriculum_reorder_private_steps_and_empty_course(client, database, rec
     ).json()
     assert progress["total_steps"] == 2 and progress["progress_percent"] == 50
     dashboard = client.get(f"/api/users/{r['user1']}/dashboard", headers=headers(r)).json()
-    assert dashboard["in_progress_curriculums"][0]["progress_percent"] == 50
+    assert dashboard["curriculums"][0]["progress_percent"] == 50
     created = client.post("/api/curriculums", headers=headers(r), json={"title": "빈 과정"})
     assert created.status_code == 201, created.text
     cid = created.json()["summary"]["curriculum_id"]
@@ -454,3 +453,140 @@ def test_curriculum_reorder_private_steps_and_empty_course(client, database, rec
     assert (
         client.put(steps, headers=headers(r, "user1"), json={"content_ids": []}).status_code == 403
     )
+
+
+def test_contract_filters_and_shared_response(client, database, records):
+    r = records
+    answer(database, r, "VIDEO_END", "SKIPPED")
+    result = client.get(
+        "/api/responses",
+        params={
+            "question_id": r["quiz"],
+            "question_version_id": r["version"],
+            "response_path": "VIDEO_QUIZ",
+            "result": "SKIP",
+        },
+        headers=headers(r),
+    )
+    assert result.status_code == 200, result.text
+    item = result.json()["items"][0]
+    detail = client.get(f"/api/responses/{item['response_id']}", headers=headers(r))
+    assert item == detail.json()
+    assert item["result"] == "SKIP"
+    assert client.get("/api/responses?question_id=999999", headers=headers(r)).status_code == 404
+    private = execute(
+        database,
+        "INSERT INTO sasu.contents(created_by_user_id,title) "
+        "VALUES(:u,'초안') RETURNING content_id",
+        u=r["admin"],
+    ).scalar_one()
+    database.commit()
+    assert (
+        client.get(
+            "/api/responses",
+            params={"content_id": private, "question_id": r["quiz"]},
+            headers=headers(r),
+        ).status_code
+        == 422
+    )
+    result = client.get(
+        "/api/statistics/contents",
+        params={"category_id": r["category"], "status": "PUBLISHED"},
+        headers=headers(r),
+    )
+    assert result.status_code == 200, result.text
+    assert result.json()["total"] == 1
+    assert result.json()["items"][0] == stats(client, r)
+    assert (
+        client.get("/api/statistics/contents?status=DRAFT", headers=headers(r)).json()["total"] == 1
+    )
+    assert (
+        client.get("/api/statistics/contents?category_id=999999", headers=headers(r)).status_code
+        == 404
+    )
+    overall = client.get("/api/statistics", headers=headers(r))
+    assert overall.status_code == 200, overall.text
+    assert overall.json()["content_count"] == 2
+    assert overall.json()["quiz"] == stats(client, r)["quiz"]
+    for suffix, key in [
+        ("quiz", "quiz"),
+        ("feed-review", "feed_review"),
+        ("wrong-answer-review", "wrong_review"),
+        ("flashcards", "flashcards"),
+        ("reactions", "reactions"),
+    ]:
+        assert stats(client, r, "/" + suffix) == stats(client, r)[key]
+
+
+def test_resolved_current_version_and_public_dashboard(client, database, records):
+    r = records
+    answer(database, r, "VIDEO_END", "WRONG")
+    answer(database, r, "WRONG_REVIEW", "CORRECT")
+    assert stats(client, r)["wrong_review"]["resolved_count"] == 1
+    execute(
+        database,
+        """INSERT INTO sasu.watch_records(user_id,learning_epoch,content_id,
+        first_played_at,last_watched_at,completed_at,max_coverage_ratio)
+        VALUES(:u,1,:c,now(),now(),now(),1)""",
+        u=r["user1"],
+        c=r["content"],
+    )
+    database.commit()
+    url = f"/api/users/{r['user1']}/dashboard"
+    assert client.get(url, headers=headers(r)).json()["completed_content_count"] == 1
+    execute(database, "UPDATE sasu.contents SET status='DRAFT' WHERE content_id=:c", c=r["content"])
+    database.commit()
+    dash = client.get(url, headers=headers(r)).json()
+    assert (
+        dash["watched_content_count"]
+        == dash["completed_content_count"]
+        == dash["answered_count"]
+        == 0
+    )
+    assert dash["first_quiz_accuracy"]["percent"] is None
+    assert stats(client, r)["wrong_review"]["resolved_count"] == 1
+    v = execute(
+        database,
+        """INSERT INTO sasu.quiz_versions(quiz_id,version_no,question_type,
+        question_text,explanation) VALUES(:q,2,'OX','new','explanation')
+        RETURNING quiz_version_id""",
+        q=r["quiz"],
+    ).scalar_one()
+    execute(
+        database,
+        """INSERT INTO sasu.quiz_options(quiz_version_id,position,option_text,is_correct)
+        VALUES(:v,1,'O',true),(:v,2,'X',false)""",
+        v=v,
+    )
+    execute(
+        database, "UPDATE sasu.quizzes SET current_version_id=:v WHERE quiz_id=:q", v=v, q=r["quiz"]
+    )
+    database.commit()
+    assert stats(client, r)["wrong_review"]["resolved_count"] == 0
+    assert stats(client, r)["wrong_review"]["answered_count"] == 1
+    assert (
+        execute(
+            database, "SELECT count(*) FROM sasu.wrong_answers WHERE status='RESOLVED'"
+        ).scalar_one()
+        == 1
+    )
+
+
+def test_default_app_routes_and_contract():
+    from app.main import app
+
+    schema = app.openapi()
+    paths = schema["paths"]
+    assert "/api/statistics" in paths
+    assert "/api/users/{user_id}/dashboard" in paths
+    pairs = [(r.path, m) for r in app.routes for m in getattr(r, "methods", [])]
+    assert len(pairs) == len(set(pairs))
+    assert set(schema["components"]["schemas"]["Overview"]["properties"]) == {
+        "content_count",
+        "published_content_count",
+        "reactions",
+        "quiz",
+        "feed_review",
+        "wrong_review",
+        "flashcards",
+    }

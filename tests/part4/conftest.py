@@ -16,8 +16,6 @@ from app.api.router import api_router
 from app.core.config import PROJECT_ROOT, get_settings
 from app.core.exceptions import register_exception_handlers
 from app.db.session import get_db
-from app.modules.dashboard.router import router as dashboard_router
-from app.modules.statistics.router import router as statistics_router
 
 TEST_URL = get_settings().database_url if os.getenv("SASU_TEST_POSTGRES") == "1" else None
 
@@ -75,12 +73,10 @@ def database(postgres_engine):
 
 @pytest.fixture
 def client(database):
-    # 파트1 소유 router.py를 편집하지 않고 최종 연결 상태를 재현한다.
+    # 정식 API 라우터를 한 번만 등록한다.
     app = FastAPI()
     register_exception_handlers(app)
     app.include_router(api_router)
-    app.include_router(dashboard_router, prefix="/api")
-    app.include_router(statistics_router, prefix="/api")
 
     def session_override():
         yield database

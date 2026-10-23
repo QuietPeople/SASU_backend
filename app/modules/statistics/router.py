@@ -5,17 +5,17 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 
 from app.api.dependencies import Database, ResourceId, reject_query_parameters
-from app.api.schemas import Page, PageQuery
+from app.api.schemas import Page
 from app.core.exceptions import ErrorResponse
-from app.core.security import require_admin
+from app.core.security import Actor, require_actor, require_admin
+from app.modules.responses.schemas import ResponseDetail
 from app.modules.statistics import service
 from app.modules.statistics.schemas import (
-    ContentMetricItem,
+    ContentQuery,
     ContentStatistics,
+    FeedReviewStats,
     FlashcardStats,
     Overview,
-    QuizStats,
-    ResponseItem,
     ResponseQuery,
     VideoQuizStats,
     WrongReviewStats,
@@ -38,10 +38,10 @@ def overview(session: Database):
 
 @router.get(
     "/statistics/contents",
-    response_model=Page[ContentMetricItem],
+    response_model=Page[ContentStatistics],
     summary="API-STA-02 콘텐츠별 통계 목록",
 )
-def content_list(query: Annotated[PageQuery, Query()], session: Database):
+def content_list(query: Annotated[ContentQuery, Query()], session: Database):
     return service.content_list(session, query)
 
 
@@ -67,7 +67,7 @@ def quiz(content_id: ResourceId, session: Database):
 
 @router.get(
     "/contents/{content_id}/statistics/feed-review",
-    response_model=QuizStats,
+    response_model=FeedReviewStats,
     dependencies=NoQuery,
     summary="API-STA-06 피드 복습 통계",
 )
@@ -95,6 +95,10 @@ def flashcards(content_id: ResourceId, session: Database):
     return service.content_stats(session, content_id).flashcards
 
 
-@router.get("/responses", response_model=Page[ResponseItem], summary="API-STA-09 응답 이력 목록")
-def responses(query: Annotated[ResponseQuery, Query()], session: Database):
-    return service.responses(session, query)
+@router.get("/responses", response_model=Page[ResponseDetail], summary="API-STA-09 응답 이력 목록")
+def responses(
+    query: Annotated[ResponseQuery, Query()],
+    session: Database,
+    actor: Annotated[Actor, Depends(require_actor)],
+):
+    return service.responses(session, query, actor)
