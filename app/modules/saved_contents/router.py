@@ -79,7 +79,6 @@ def unsave_content(
     response_model=SavedContentsPage,
     operation_id="API-SAV-03",
     summary="API-SAV-03 저장 콘텐츠 목록",
-    openapi_extra={"x-temporary-integrations": ["SAV-T02", "SAV-T03", "SAV-T04"]},
     description=(
         "본인 또는 관리자가 대상 학습자의 저장 목록을 조회합니다. 최신 저장순이며 "
         "비공개·재생 불가 콘텐츠는 제외합니다. 조회로 저장 관계를 삭제하지 않습니다."

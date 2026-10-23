@@ -65,7 +65,7 @@ def test_openapi_documents_operations_and_temporary_integrations(client):
         "size",
     }
     assert {p["name"] for p in listing["parameters"] if p["in"] == "header"} == {"X-Actor-Id"}
-    assert listing["x-temporary-integrations"] == ["SAV-T02", "SAV-T03", "SAV-T04"]
+    assert "x-temporary-integrations" not in listing
     ids = [
         operation["operationId"]
         for methods in paths.values()

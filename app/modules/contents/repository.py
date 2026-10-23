@@ -5,12 +5,15 @@ from sqlalchemy import case, delete, func, literal, or_, select
 from sqlalchemy.orm import Session
 
 from app.modules.categories.models import Category
-from app.modules.contents import read_tables as reads
 from app.modules.contents.models import Content, ContentTag, VideoAsset
 from app.modules.contents.schemas import ContentListQuery
+from app.modules.curricula.repository import related_to_content
 from app.modules.likes.tables import content_likes
+from app.modules.questions.tables import quizzes
 from app.modules.saved_contents.tables import saved_contents
+from app.modules.statistics.tables import content_metrics
 from app.modules.tags.models import Tag
+from app.modules.watch_records.tables import watch_records
 
 
 def get_category(session: Session, category_id: int) -> Category | None:
@@ -105,10 +108,10 @@ def load_presentations(
         return []
     ids = [content.content_id for content in contents]
     quiz_exists = (
-        select(reads.quizzes.c.content_id)
+        select(quizzes.c.content_id)
         .where(
-            reads.quizzes.c.content_id == Content.content_id,
-            reads.quizzes.c.current_version_id.is_not(None),
+            quizzes.c.content_id == Content.content_id,
+            quizzes.c.current_version_id.is_not(None),
         )
         .correlate(Content)
         .exists()
@@ -131,17 +134,17 @@ def load_presentations(
             Content.content_id,
             Category,
             VideoAsset,
-            func.coalesce(reads.content_metrics.c.view_count, 0),
-            func.coalesce(reads.content_metrics.c.like_count, 0),
+            func.coalesce(content_metrics.c.view_count, 0),
+            func.coalesce(content_metrics.c.like_count, 0),
             quiz_exists,
             personal(content_likes),
             personal(saved_contents),
-            personal(reads.watch_records, reads.watch_records.c.completed_at.is_not(None)),
+            personal(watch_records, watch_records.c.completed_at.is_not(None)),
         )
         .select_from(Content)
         .outerjoin(Category, Category.category_id == Content.category_id)
         .outerjoin(VideoAsset, VideoAsset.video_asset_id == Content.video_asset_id)
-        .outerjoin(reads.content_metrics, reads.content_metrics.c.content_id == Content.content_id)
+        .outerjoin(content_metrics, content_metrics.c.content_id == Content.content_id)
         .where(Content.content_id.in_(ids))
     )
     by_id = {content.content_id: Presentation(content) for content in contents}
@@ -161,16 +164,7 @@ def load_presentations(
 
 
 def related_curriculums(session: Session, content_id: int) -> list[dict]:
-    rows = session.execute(
-        select(reads.curricula.c.curriculum_id, reads.curricula.c.title)
-        .join(
-            reads.curriculum_items,
-            reads.curriculum_items.c.curriculum_id == reads.curricula.c.curriculum_id,
-        )
-        .where(reads.curriculum_items.c.content_id == content_id)
-        .order_by(reads.curricula.c.curriculum_id)
-    )
-    return [dict(row._mapping) for row in rows]
+    return related_to_content(session, content_id)
 
 
 def replace_tags(session: Session, content_id: int, tag_ids: list[int]) -> None:

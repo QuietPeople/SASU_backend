@@ -1,30 +1,33 @@
 """적재된 sasu 테이블·뷰·함수에 접근한다. 다른 모듈의 ORM 모델을 중복 선언하지 않는다."""
 
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
+
+from app.modules.statistics.tables import content_metrics
+from app.modules.watch_records.tables import watch_records
 
 
 def find_reaction_stats(session: Session, content_id: int):
+    played = (
+        select(func.count())
+        .select_from(watch_records)
+        .where(watch_records.c.content_id == content_id)
+    )
     return (
         session.execute(
-            text(
-                """
-            SELECT metrics.view_count, metrics.like_count, metrics.saved_count,
-                   (SELECT count(*) FROM sasu.watch_records
-                    WHERE content_id = :content_id) AS played_count,
-                   (SELECT count(*) FROM sasu.watch_records
-                    WHERE content_id = :content_id AND completed_at IS NOT NULL) AS completed_count
-            FROM sasu.content_metrics metrics
-            WHERE metrics.content_id = :content_id
-            """
-            ),
-            {"content_id": content_id},
+            select(
+                content_metrics.c.view_count,
+                content_metrics.c.like_count,
+                content_metrics.c.saved_count,
+                played.scalar_subquery().label("played_count"),
+                played.where(watch_records.c.completed_at.is_not(None))
+                .scalar_subquery()
+                .label("completed_count"),
+            ).where(content_metrics.c.content_id == content_id)
         )
         .mappings()
         .one_or_none()
     )
-
-
 
 
 def count_learning_records(session: Session, user_id: int):

@@ -7,7 +7,7 @@ from app.integrations.storage import LocalVideoStorage
 from app.modules.contents import repository as contents_repository
 from app.modules.contents.models import ContentStatus
 from app.modules.contents.service import build_content_summary, is_video_available
-from app.modules.saved_contents import repository, temporary_bridge
+from app.modules.saved_contents import repository
 from app.modules.saved_contents.repository import SavedCandidate
 from app.modules.saved_contents.schemas import (
     SavedContentsPage,
@@ -69,7 +69,7 @@ def list_saved_contents(
             session, user_id, category_id=query.category_id
         )
         playable = filter_playable_candidates(candidates, storage)
-        presentations = temporary_bridge.load_saved_presentations(
+        presentations = contents_repository.load_presentations(
             session, [item.content for item in playable], user_id
         )
         items = [
