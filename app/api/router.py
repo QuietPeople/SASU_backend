@@ -7,9 +7,11 @@ from app.modules.attempts.router import router as attempts_router
 from app.modules.categories.router import router as categories_router
 from app.modules.contents.router import router as contents_router
 from app.modules.curricula.router import router as curricula_router
+from app.modules.dashboard.router import router as dashboard_router
 from app.modules.likes.router import router as likes_router
 from app.modules.questions.router import router as questions_router
 from app.modules.responses.router import router as responses_router
+from app.modules.statistics.router import router as statistics_router
 from app.modules.reviews.router import router as reviews_router
 from app.modules.saved_contents.router import router as saved_contents_router
 from app.modules.system.router import router as system_router
@@ -35,4 +37,6 @@ api_router.include_router(user_settings_router)
 api_router.include_router(watch_records_router)
 api_router.include_router(events_router)
 api_router.include_router(responses_router)
+api_router.include_router(dashboard_router)
+api_router.include_router(statistics_router)
 api_router.include_router(reviews_router)
