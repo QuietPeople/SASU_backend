@@ -7,12 +7,14 @@ from app.modules.users.settings_tables import user_interests, user_settings
 _ALLOWED_SETTINGS_FIELDS = frozenset({"onboarding_status", "review_interval"})
 
 
-def lock_settings(session: Session, user_id: int) -> int | None:
-    """user_settings 행을 FOR UPDATE로 잠그고 learning_epoch 반환. 없으면 None."""
+def lock_settings(session: Session, user_id: int, *, write: bool = True) -> int | None:
+    """학습자 상태를 잠근다. 읽기는 SHARE, 변경·초기화는 UPDATE이며 commit하지 않는다."""
+    lock = "UPDATE" if write else "SHARE"
     return session.scalar(
         text(
-            "SELECT learning_epoch FROM sasu.user_settings "
-            "WHERE user_id = :uid FOR UPDATE"
+            "SELECT s.learning_epoch FROM sasu.user_settings s "
+            "JOIN sasu.app_users u ON u.user_id = s.user_id "
+            f"WHERE s.user_id = :uid AND u.role = 'LEARNER' FOR {lock} OF s"
         ),
         {"uid": user_id},
     )

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.attempts import repository as attempts_repository
 from app.modules.reviews import repository, service
+from app.modules.users import settings_repository
 
 
 def wait_for_lock(engine, entered, backend, future):
@@ -129,7 +130,7 @@ def test_wrong_list_waits_for_grading_and_reads_committed_wrong_state(
     records = committed_records
     question = records["questions"][0]
     with Session(postgres_engine) as first, http_factory(postgres_engine) as client:
-        attempts_repository.learner_epoch(first, records["learner"], write=True)
+        settings_repository.lock_settings(first, records["learner"], write=True)
         attempt_id = uuid4()
         attempts_repository.insert_attempt(
             first,

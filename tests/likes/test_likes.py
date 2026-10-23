@@ -8,6 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.modules.likes import repository
+from app.modules.users import settings_repository
 
 
 def like_row(ctx):
@@ -244,20 +245,20 @@ def test_final_commit_failure_rolls_back_and_allows_retry(context):
 
 
 def track_lock_requests(monkeypatch, expected):
-    original = repository.lock_learner_state
+    original = settings_repository.lock_settings
     pids = []
     guard = Lock()
     entered = Event()
 
-    def tracked(session, user_id):
+    def tracked(session, user_id, **kwargs):
         pid = session.connection().connection.driver_connection.info.backend_pid
         with guard:
             pids.append(pid)
             if len(pids) == expected:
                 entered.set()
-        return original(session, user_id)
+        return original(session, user_id, **kwargs)
 
-    monkeypatch.setattr(repository, "lock_learner_state", tracked)
+    monkeypatch.setattr(settings_repository, "lock_settings", tracked)
     return pids, entered
 
 

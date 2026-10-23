@@ -5,21 +5,6 @@ from sqlalchemy.orm import Session
 from app.modules.likes.tables import content_likes
 
 
-def lock_learner_state(session: Session, user_id: int) -> int | None:
-    return session.scalar(
-        text(
-            """
-            SELECT settings.learning_epoch
-            FROM sasu.user_settings settings
-            JOIN sasu.app_users users ON users.user_id = settings.user_id
-            WHERE settings.user_id = :user_id AND users.role = 'LEARNER'
-            FOR UPDATE OF settings
-            """
-        ),
-        {"user_id": user_id},
-    )
-
-
 def lock_content_status(session: Session, content_id: int) -> str | None:
     return session.scalar(
         text("SELECT status FROM sasu.contents WHERE content_id = :content_id FOR UPDATE"),

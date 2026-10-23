@@ -5,24 +5,24 @@ from threading import Event, Lock
 import pytest
 from sqlalchemy import text
 
-from app.modules.saved_contents import temporary_bridge
+from app.modules.users import settings_repository
 
 
 def track_requests(monkeypatch, expected):
-    original = temporary_bridge.lock_current_epoch
+    original = settings_repository.lock_settings
     pids = []
     entered = Event()
     guard = Lock()
 
-    def tracked(session, user_id):
+    def tracked(session, user_id, **kwargs):
         pid = session.connection().connection.driver_connection.info.backend_pid
         with guard:
             pids.append(pid)
             if len(pids) == expected:
                 entered.set()
-        return original(session, user_id)
+        return original(session, user_id, **kwargs)
 
-    monkeypatch.setattr(temporary_bridge, "lock_current_epoch", tracked)
+    monkeypatch.setattr(settings_repository, "lock_settings", tracked)
     return pids, entered
 
 

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.modules.attempts import repository
 from app.modules.questions import repository as questions_repository
 from app.modules.questions.schemas import QuestionInput
+from app.modules.users import settings_repository
 
 
 def request_for(records):
@@ -33,7 +34,7 @@ def post(client, records, request, user="learner"):
 
 
 def hold_attempt(session, records, request):
-    repository.learner_epoch(session, records["learner"], write=True)
+    settings_repository.lock_settings(session, records["learner"], write=True)
     repository.lock_attempt_id(session, request["attempt_id"])
     repository.insert_attempt(
         session,
@@ -48,14 +49,15 @@ def hold_attempt(session, records, request):
 
 def observe(monkeypatch, name):
     entered, backend = Event(), {}
-    original = getattr(repository, name)
+    owner = settings_repository if name == "lock_settings" else repository
+    original = getattr(owner, name)
 
     def tracked(session, *args, **kwargs):
         backend["pid"] = session.scalar(text("SELECT pg_backend_pid()"))
         entered.set()
         return original(session, *args, **kwargs)
 
-    monkeypatch.setattr(repository, name, tracked)
+    monkeypatch.setattr(owner, name, tracked)
     return entered, backend
 
 
@@ -83,7 +85,7 @@ def test_same_attempt_uuid_waits_then_returns_original(
     request = request_for(records)
     with Session(postgres_engine) as first, http_factory(postgres_engine) as client:
         hold_attempt(first, records, request)
-        entered, backend = observe(monkeypatch, "learner_epoch")
+        entered, backend = observe(monkeypatch, "lock_settings")
         with ThreadPoolExecutor(max_workers=1) as executor:
             pending = executor.submit(post, client, records, request)
             try:
@@ -130,7 +132,7 @@ def test_reset_commits_first_and_rejects_late_create(
     request = request_for(records)
     with Session(postgres_engine) as first, http_factory(postgres_engine) as client:
         first.scalar(text("SELECT sasu.reset_learning(:id, 1)"), {"id": records["learner"]})
-        entered, backend = observe(monkeypatch, "learner_epoch")
+        entered, backend = observe(monkeypatch, "lock_settings")
         with ThreadPoolExecutor(max_workers=1) as executor:
             pending = executor.submit(post, client, records, request)
             try:
@@ -237,7 +239,7 @@ def seed_submission_attempt(session, records):
 
 
 def hold_wrong_response(session, records, attempt_id):
-    repository.learner_epoch(session, records["learner"], write=True)
+    settings_repository.lock_settings(session, records["learner"], write=True)
     repository.lock_owned_attempt(session, attempt_id, records["learner"], 1)
     question = records["questions"][0]
     return repository.insert_response(
@@ -275,7 +277,7 @@ def test_concurrent_submission_waits_and_preserves_first_verdict(
                 ]["option_id"],
             }
         )
-        entered, backend = observe(monkeypatch, "learner_epoch")
+        entered, backend = observe(monkeypatch, "lock_settings")
         with ThreadPoolExecutor(max_workers=1) as executor:
             pending = executor.submit(put_response, client, records, attempt_id, payload)
             try:
@@ -319,7 +321,7 @@ def test_distinct_attempts_concurrently_increment_wrong_once_each(
             "action": "ANSWER",
             "selected_option_id": records["questions"][0]["options"][1]["option_id"],
         }
-        entered, backend = observe(monkeypatch, "learner_epoch")
+        entered, backend = observe(monkeypatch, "lock_settings")
         with ThreadPoolExecutor(max_workers=1) as executor:
             pending = executor.submit(put_response, client, records, second, payload)
             try:
@@ -346,7 +348,7 @@ def test_reset_commits_before_late_submission(
     with Session(postgres_engine) as first, http_factory(postgres_engine) as client:
         attempt_id = seed_submission_attempt(first, records)
         first.scalar(text("SELECT sasu.reset_learning(:user, 1)"), {"user": records["learner"]})
-        entered, backend = observe(monkeypatch, "learner_epoch")
+        entered, backend = observe(monkeypatch, "lock_settings")
         with ThreadPoolExecutor(max_workers=1) as executor:
             pending = executor.submit(put_response, client, records, attempt_id, {"action": "SKIP"})
             try:
@@ -431,7 +433,7 @@ def test_submission_waits_for_display_event_commit(
                 "attempt": request["attempt_id"],
             },
         )
-        entered, backend = observe(monkeypatch, "learner_epoch")
+        entered, backend = observe(monkeypatch, "lock_settings")
         with ThreadPoolExecutor(max_workers=1) as executor:
             pending = executor.submit(
                 put_response, client, records, request["attempt_id"], {"action": "SKIP"}

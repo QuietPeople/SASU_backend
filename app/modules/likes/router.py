@@ -1,19 +1,15 @@
-from typing import Annotated
+from fastapi import APIRouter, Depends
 
-from fastapi import APIRouter, Depends, Header
-
-from app.api.dependencies import ActorId, Database, ResourceId, reject_query_parameters
+from app.api.dependencies import (
+    ActorId,
+    Database,
+    GenerationHeader,
+    ResourceId,
+    reject_query_parameters,
+)
 from app.core.exceptions import ErrorResponse
 from app.modules.likes import service
-from app.modules.likes.schemas import LikeState, RecordGeneration
-
-GenerationHeader = Annotated[
-    RecordGeneration,
-    Header(
-        alias="X-Record-Generation",
-        description="현재 학습 기록 세대. 최초 0이며 DB learning_epoch보다 1 작습니다.",
-    ),
-]
+from app.modules.likes.schemas import LikeState
 
 router = APIRouter(
     prefix="/users/{user_id}/contents/{content_id}/like",

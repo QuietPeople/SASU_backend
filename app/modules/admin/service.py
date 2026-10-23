@@ -13,6 +13,7 @@ from app.modules.admin.schemas import (
     ResetRequest,
     ResetResult,
 )
+from app.modules.users.settings_service import current_epoch
 
 
 def get_reaction_stats(session: Session, content_id: int) -> ReactionStats:
@@ -34,14 +35,7 @@ def reset_records(session: Session, user_id: int, request: ResetRequest) -> Rese
     try:
         if not request.confirm:
             raise ApiError(422, "RESET_CONFIRMATION_REQUIRED", "초기화 확인이 필요합니다.")
-        state = repository.lock_learner_state(session, user_id)
-        if state is None:
-            raise ApiError(404, "USER_NOT_FOUND", "대상 학습자를 찾을 수 없습니다.")
-        expected_epoch = request.expected_record_generation + 1
-        if state["learning_epoch"] != expected_epoch:
-            raise ApiError(
-                409, "RECORD_GENERATION_MISMATCH", "현재 기록 세대를 다시 확인해 주세요."
-            )
+        expected_epoch = current_epoch(session, user_id, request.expected_record_generation)
         deleted = DeletedCounts.model_validate(repository.count_learning_records(session, user_id))
         next_epoch = repository.reset_learning(session, user_id, expected_epoch)
         result = ResetResult(

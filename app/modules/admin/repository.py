@@ -25,23 +25,6 @@ def find_reaction_stats(session: Session, content_id: int):
     )
 
 
-def lock_learner_state(session: Session, user_id: int):
-    return (
-        session.execute(
-            text(
-                """
-            SELECT settings.learning_epoch
-            FROM sasu.user_settings settings
-            JOIN sasu.app_users users ON users.user_id = settings.user_id
-            WHERE settings.user_id = :user_id AND users.role = 'LEARNER'
-            FOR UPDATE OF settings
-            """
-            ),
-            {"user_id": user_id},
-        )
-        .mappings()
-        .one_or_none()
-    )
 
 
 def count_learning_records(session: Session, user_id: int):

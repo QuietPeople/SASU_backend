@@ -6,16 +6,6 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 
-def learner_epoch(session: Session, user_id: int, *, write: bool) -> int | None:
-    lock = "UPDATE" if write else "SHARE"
-    return session.scalar(
-        text(
-            "SELECT s.learning_epoch FROM sasu.user_settings s "
-            "JOIN sasu.app_users u ON u.user_id = s.user_id "
-            f"WHERE s.user_id = :id AND u.role = 'LEARNER' FOR {lock} OF s"
-        ),
-        {"id": user_id},
-    )
 
 
 def lock_attempt_id(session: Session, attempt_id: UUID) -> None:

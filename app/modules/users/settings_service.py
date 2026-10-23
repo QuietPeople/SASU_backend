@@ -119,3 +119,14 @@ def update_feed_position(
             if status is None or status != "PUBLISHED":
                 raise ApiError(404, "CONTENT_NOT_FOUND", "접근 가능한 콘텐츠가 없습니다.")
             repo.update_last_content(session, user_id, body.content_id)
+
+
+def current_epoch(
+    session: Session, user_id: int, generation: int | None = None, *, write: bool = True
+) -> int:
+    epoch = repo.lock_settings(session, user_id, write=write)
+    if epoch is None:
+        raise ApiError(404, "USER_NOT_FOUND", "사용자 설정을 찾을 수 없습니다.")
+    if generation is not None and epoch != generation + 1:
+        raise ApiError(409, "RECORD_GENERATION_MISMATCH", "현재 기록 세대를 다시 확인해 주세요.")
+    return epoch

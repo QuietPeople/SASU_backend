@@ -4,7 +4,9 @@ from sqlalchemy.orm import Session
 
 from app.api.schemas import Page
 from app.core.exceptions import ApiError
-from app.modules.attempts.service import check_learner, current_epoch, media_available
+from app.modules.attempts.service import media_available
+from app.modules.users.service import require_learner
+from app.modules.users.settings_service import current_epoch
 from app.modules.contents.schemas import ContentSummary
 from app.modules.contents.urls import build_video_url
 from app.modules.questions.schemas import LearnerQuestion
@@ -22,7 +24,7 @@ from app.modules.reviews.schemas import (
 
 
 def read_epoch(session: Session, actor_id: int, user_id: int) -> int:
-    check_learner(session, actor_id, user_id)
+    require_learner(session, actor_id, user_id)
     # 초기화·응답 저장과 조회가 섞이지 않도록 기존 사용자 상태 잠금을 재사용한다.
     return current_epoch(session, user_id, write=False)
 

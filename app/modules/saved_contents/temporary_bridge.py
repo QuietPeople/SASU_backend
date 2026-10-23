@@ -6,16 +6,10 @@
 
 from sqlalchemy.orm import Session
 
-from app.modules.admin.repository import lock_learner_state
 from app.modules.contents.models import Content
 from app.modules.contents.repository import Presentation, load_presentations
 
 
-def lock_current_epoch(session: Session, user_id: int) -> int | None:
-    # 임시 연동 SAV-T01 / 파트 2·4: 사용자 세대 공통 함수 제공 후 교체한다.
-    # 기존 초기화의 행 잠금을 그대로 사용하며 호출자의 트랜잭션을 끝내지 않는다.
-    state = lock_learner_state(session, user_id)
-    return state["learning_epoch"] if state is not None else None
 
 
 def load_saved_presentations(

@@ -1,17 +1,20 @@
 """파트 3의 ATM-01~03. 공통 라우터에서는 /api 아래 한 번 등록한다."""
 
-from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Response
+from fastapi import APIRouter, Depends, Response
 
-from app.api.dependencies import ActorId, Database, ResourceId, reject_query_parameters
+from app.api.dependencies import (
+    ActorId,
+    Database,
+    GenerationHeader,
+    ResourceId,
+    reject_query_parameters,
+)
 from app.core.exceptions import ErrorResponse
 from app.modules.attempts import service
-from app.modules.attempts.schemas import Attempt, AttemptCreate, AttemptSubmission, RecordGeneration
+from app.modules.attempts.schemas import Attempt, AttemptCreate, AttemptSubmission
 from app.modules.responses.schemas import ResponseDetail
-
-GenerationHeader = Annotated[RecordGeneration, Header(alias="X-Record-Generation")]
 
 router = APIRouter(
     prefix="/users/{user_id}/question-attempts",
