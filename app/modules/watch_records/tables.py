@@ -1,7 +1,16 @@
-from sqlalchemy import BigInteger, Column, Integer, MetaData, Numeric, String, TIMESTAMP, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import BigInteger, Column, DateTime, Integer, MetaData, Numeric, Table
 
-metadata = MetaData()
+metadata = MetaData(schema="sasu")
 
-watch_visits = None  # raw access via text() SQL; ORM Table not needed for write path
-watch_records = None  # same — queries use text() exclusively
+watch_records = Table(
+    "watch_records",
+    metadata,
+    Column("user_id", BigInteger, primary_key=True),
+    Column("content_id", BigInteger, primary_key=True),
+    Column("learning_epoch", Integer),
+    Column("first_played_at", DateTime(timezone=True)),
+    Column("last_watched_at", DateTime(timezone=True)),
+    Column("view_counted_at", DateTime(timezone=True)),
+    Column("completed_at", DateTime(timezone=True)),
+    Column("max_coverage_ratio", Numeric(9, 8)),
+)
