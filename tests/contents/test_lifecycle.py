@@ -15,15 +15,18 @@ from app.db.models import load_models
 from app.db.session import get_db
 from app.integrations.storage import LocalVideoStorage
 from app.modules.categories.models import Category
-from app.modules.contents import read_tables as reads
 from app.modules.contents import repository, video_service
 from app.modules.contents.models import Content, ContentTag, VideoAsset
 from app.modules.contents.schemas import VideoQuery
+from app.modules.curricula.tables import curricula, curriculum_items
 from app.modules.likes.tables import content_likes
+from app.modules.questions.tables import quizzes
 from app.modules.saved_contents.tables import saved_contents
+from app.modules.statistics.tables import content_metrics
 from app.modules.tags.models import Tag
 from app.modules.users.models import User, UserRole
 from app.modules.videos.service import get_video_ingest_service
+from app.modules.watch_records.tables import watch_records
 
 
 @pytest.fixture
@@ -43,9 +46,11 @@ def context(monkeypatch, stub_video_ingest):
     Base.metadata.create_all(engine)
     # 읽기 참조용 최소 테이블은 SQLite 테스트 안에서만 만든다.
     # 실제 PostgreSQL에서는 Alembic의 전체 테이블과 content_metrics 뷰를 검증한다.
-    reads.metadata.create_all(engine)
+    for table in (quizzes, content_metrics, curricula, curriculum_items):
+        table.create(engine)
     content_likes.create(engine)
     saved_contents.create(engine)
+    watch_records.create(engine)
     factory = sessionmaker(engine, expire_on_commit=False)
     with factory() as session, session.begin():
         admin = User(username="admin", display_name="관리자", role=UserRole.ADMIN)
@@ -68,9 +73,7 @@ def context(monkeypatch, stub_video_ingest):
             yield session
 
     monkeypatch.setitem(main.app.dependency_overrides, get_db, provide_session)
-    monkeypatch.setitem(
-        main.app.dependency_overrides, get_video_ingest_service, stub_video_ingest
-    )
+    monkeypatch.setitem(main.app.dependency_overrides, get_video_ingest_service, stub_video_ingest)
     client = TestClient(main.app)
     ctx = SimpleNamespace(
         client=client,
@@ -301,7 +304,7 @@ def test_counts_personal_state_quiz_and_related_curriculums(context):
     content_id = published(ctx)
     with ctx.factory() as session, session.begin():
         session.execute(
-            reads.content_metrics.insert().values(content_id=content_id, view_count=7, like_count=2)
+            content_metrics.insert().values(content_id=content_id, view_count=7, like_count=2)
         )
         session.execute(
             content_likes.insert().values(
@@ -314,15 +317,13 @@ def test_counts_personal_state_quiz_and_related_curriculums(context):
             )
         )
         session.execute(
-            reads.watch_records.insert().values(
+            watch_records.insert().values(
                 user_id=ctx.ids["learner"], content_id=content_id, completed_at=datetime.now(UTC)
             )
         )
-        session.execute(reads.quizzes.insert().values(content_id=content_id, current_version_id=5))
-        session.execute(reads.curricula.insert().values(curriculum_id=3, title="연결 과정"))
-        session.execute(
-            reads.curriculum_items.insert().values(curriculum_id=3, content_id=content_id)
-        )
+        session.execute(quizzes.insert().values(content_id=content_id, current_version_id=5))
+        session.execute(curricula.insert().values(curriculum_id=3, title="연결 과정"))
+        session.execute(curriculum_items.insert().values(curriculum_id=3, content_id=content_id))
     result = ctx.client.get(
         f"/api/contents/{content_id}", headers={"X-Actor-Id": str(ctx.ids["learner"])}
     ).json()
@@ -486,9 +487,7 @@ def test_other_replacement_completed_during_processing_keeps_winner(
             assert winner.status_code == 200, winner.text
             return result
 
-    monkeypatch.setitem(
-        main.app.dependency_overrides, get_video_ingest_service, InterleavedIngest
-    )
+    monkeypatch.setitem(main.app.dependency_overrides, get_video_ingest_service, InterleavedIngest)
     response = upload(ctx, content_id, b"loser", revision)
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "VIDEO_CHANGED"

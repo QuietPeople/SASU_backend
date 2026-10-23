@@ -11,7 +11,6 @@ from app.modules.questions.schemas import LearnerQuestion
 from app.modules.responses.schemas import ResponseDetail
 
 ResponsePath = Literal["VIDEO_QUIZ", "FEED_REVIEW", "WRONG_NOTE"]
-RecordGeneration = Annotated[int, Field(ge=0, le=2**31 - 2)]
 
 
 class AttemptCreate(BaseModel):

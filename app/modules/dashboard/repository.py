@@ -28,7 +28,9 @@ result='CORRECT')
    AS first_correct,
  COALESCE((SELECT jsonb_agg(jsonb_build_object(
 'curriculum_id',p.curriculum_id,'title',c.title,'description',c.description,'available_steps',p.available_steps,'total_steps',p.total_steps,
-    'media_paths',(SELECT jsonb_agg(a.storage_path)
+    'media',(SELECT jsonb_agg(jsonb_build_object(
+        'storage_path',a.storage_path,'size_bytes',a.size_bytes,
+        'mime_type',a.mime_type,'duration_seconds',a.duration_seconds))
       FROM sasu.curriculum_items i JOIN sasu.contents x USING(content_id)
       LEFT JOIN sasu.video_assets a USING(video_asset_id)
       WHERE i.curriculum_id=p.curriculum_id AND x.status='PUBLISHED'),

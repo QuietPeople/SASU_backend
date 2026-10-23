@@ -4,9 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.api.schemas import Page
 from app.core.exceptions import ApiError
-from app.modules.attempts.service import check_learner, current_epoch, media_available
-from app.modules.contents.schemas import ContentSummary
-from app.modules.contents.urls import build_video_url
+from app.modules.contents.presentation import build_summary
 from app.modules.questions.schemas import LearnerQuestion
 from app.modules.questions.service import get_version
 from app.modules.reviews import repository
@@ -19,10 +17,13 @@ from app.modules.reviews.schemas import (
     WrongAnswerItem,
     WrongAnswerQuery,
 )
+from app.modules.users.service import require_learner
+from app.modules.users.settings_service import current_epoch
+from app.modules.videos.availability import is_video_row_available
 
 
 def read_epoch(session: Session, actor_id: int, user_id: int) -> int:
-    check_learner(session, actor_id, user_id)
+    require_learner(session, actor_id, user_id)
     # 초기화·응답 저장과 조회가 섞이지 않도록 기존 사용자 상태 잠금을 재사용한다.
     return current_epoch(session, user_id, write=False)
 
@@ -52,7 +53,6 @@ def get_wrong_answers(
     rows, total = repository.list_wrong_answers(session, user_id, epoch, status, query)
     items = []
     for row in rows:
-        revision = str(row["video_asset_id"])
         items.append(
             WrongAnswerItem(
                 question=LearnerQuestion(
@@ -65,21 +65,9 @@ def get_wrong_answers(
                     question_text=row["question_text"],
                     options=row["options"],
                 ),
-                content=ContentSummary(
-                    content_id=row["content_id"],
-                    title=row["content_title"],
-                    category={"category_id": row["category_id"], "name": row["category_name"]},
-                    tags=row["tags"],
-                    video_duration=row["duration_seconds"],
-                    video_url=build_video_url(row["content_id"], revision),
-                    media_revision=revision,
-                    view_count=row["view_count"],
-                    like_count=row["like_count"],
-                    liked=row["liked"],
-                    saved=row["saved"],
-                    watch_completed=row["watch_completed"],
-                    has_quiz=True,
-                    status="PUBLISHED",
+                content=build_summary(
+                    {**row, "title": row["content_title"], "has_quiz": True, "status": "PUBLISHED"},
+                    actor_id,
                 ),
                 status=query.status,
                 wrong_count=row["wrong_count"],
@@ -141,7 +129,7 @@ def get_candidate(
         request.retry_question_version_ids,
     ):
         # 이용 불가 영상을 건너뛰어 ATM-01에서 바로 사용할 수 있는 후보를 고른다.
-        if media_available(row["storage_path"]):
+        if is_video_row_available(row):
             version = get_version(session, row["quiz_id"], row["quiz_version_id"])
             return ReviewCandidate(
                 candidate=LearnerQuestion.model_validate(version.model_dump()),

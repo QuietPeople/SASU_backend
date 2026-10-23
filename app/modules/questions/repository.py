@@ -1,7 +1,9 @@
 """기존 문항·불변 버전·보기 테이블 접근. 버전과 보기를 UPDATE하지 않는다."""
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
+
+from app.modules.questions.tables import quizzes
 
 
 def find_content(session: Session, content_id: int, lock: bool = False):
@@ -23,8 +25,9 @@ def find_question(session: Session, question_id: int, lock: bool = False):
 def question_for_content(session: Session, content_id: int):
     return (
         session.execute(
-            text("SELECT quiz_id, current_version_id FROM sasu.quizzes WHERE content_id = :id"),
-            {"id": content_id},
+            select(quizzes.c.quiz_id, quizzes.c.current_version_id).where(
+                quizzes.c.content_id == content_id
+            )
         )
         .mappings()
         .one_or_none()

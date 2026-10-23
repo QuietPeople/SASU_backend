@@ -6,12 +6,9 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app.api.schemas import Page
-from app.core.config import get_settings
 from app.core.exceptions import ApiError
 from app.core.security import Actor
-from app.integrations.storage import LocalVideoStorage
-from app.modules.contents.schemas import ContentSummary
-from app.modules.contents.urls import build_video_url
+from app.modules.contents.presentation import build_summary
 from app.modules.curricula import repository
 from app.modules.curricula.schemas import (
     CurriculumDetail,
@@ -26,6 +23,7 @@ from app.modules.curricula.schemas import (
     ProgressStep,
     StepsInput,
 )
+from app.modules.videos.availability import is_video_row_available
 
 
 def target_user(session: Session, query: CurriculumQuery, actor: Actor) -> int | None:
@@ -44,47 +42,21 @@ def target_user(session: Session, query: CurriculumQuery, actor: Actor) -> int |
     return target
 
 
-def media_available(relative_path: str | None) -> bool:
-    if not relative_path:
-        return False
-    try:
-        storage = LocalVideoStorage(get_settings().video_storage_root)
-        return storage.resolve_path(relative_path).is_file()
-    except (OSError, RuntimeError, ValueError):
-        return False
-
-
 def make_step(row, user_id: int | None, view: str, actor_id: int) -> CurriculumStep:
-    available = row["status"] == "PUBLISHED" and media_available(row["storage_path"])
+    available = row["status"] == "PUBLISHED" and is_video_row_available(row)
     watched = row["watched"] if user_id is not None else None
     correct = row["correct"] if user_id is not None else None
     content = None
     if view == "editor" or available:
-        revision = str(row["video_asset_id"]) if row["video_asset_id"] else None
-        video_url = None
-        if revision:
-            video_url = build_video_url(
-                row["content_id"],
-                revision,
-                preview_actor_id=actor_id if view == "editor" else None,
-            )
-        content = ContentSummary(
-            content_id=row["content_id"],
-            title=row["title"],
-            category={"category_id": row["category_id"], "name": row["category_name"]}
-            if row["category_id"]
-            else None,
-            tags=row["tags"],
-            video_duration=row["duration_seconds"],
-            video_url=video_url,
-            media_revision=revision,
-            view_count=row["view_count"],
-            like_count=row["like_count"],
-            liked=row["liked"] if user_id is not None else None,
-            saved=row["saved"] if user_id is not None else None,
-            watch_completed=watched,
-            has_quiz=row["has_quiz"],
-            status=row["status"],
+        content = build_summary(
+            {
+                **row,
+                "watch_completed": watched,
+                "liked": row["liked"] if user_id is not None else None,
+                "saved": row["saved"] if user_id is not None else None,
+            },
+            actor_id,
+            preview=view == "editor",
         )
     return CurriculumStep(
         curriculum_content_id=row["content_id"],

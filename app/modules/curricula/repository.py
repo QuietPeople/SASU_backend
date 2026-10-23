@@ -1,7 +1,9 @@
 """sasu.curricula/curriculum_items의 자연 키와 기존 학습 기록을 사용한다."""
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
+
+from app.modules.curricula.tables import curricula, curriculum_items
 
 
 def learner_exists(session: Session, user_id: int) -> bool:
@@ -58,6 +60,7 @@ def load_steps(session: Session, curriculum_ids: list[int], user_id: int | None)
             SELECT i.curriculum_id, i.position, c.content_id, c.title, c.status,
                    c.category_id, category.name AS category_name,
                    asset.video_asset_id, asset.storage_path, asset.duration_seconds,
+                   asset.size_bytes, asset.mime_type,
                    metrics.view_count, metrics.like_count,
                    COALESCE((SELECT jsonb_agg(jsonb_build_object('tag_id', t.tag_id, 'name', t.name)
                                              ORDER BY t.tag_id)
@@ -135,3 +138,13 @@ def replace_steps(session: Session, curriculum_id: int, content_ids: list[int]) 
         text("UPDATE sasu.curricula SET updated_at = clock_timestamp() WHERE curriculum_id = :id"),
         {"id": curriculum_id},
     )
+
+
+def related_to_content(session: Session, content_id: int) -> list[dict]:
+    rows = session.execute(
+        select(curricula.c.curriculum_id, curricula.c.title)
+        .join(curriculum_items, curriculum_items.c.curriculum_id == curricula.c.curriculum_id)
+        .where(curriculum_items.c.content_id == content_id)
+        .order_by(curricula.c.curriculum_id)
+    )
+    return [dict(row._mapping) for row in rows]

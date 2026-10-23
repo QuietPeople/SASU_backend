@@ -2,17 +2,19 @@ from sqlalchemy import delete, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.modules.users.settings_tables import user_interests, user_settings
+from app.modules.users.settings_tables import user_interests
 
 _ALLOWED_SETTINGS_FIELDS = frozenset({"onboarding_status", "review_interval"})
 
 
-def lock_settings(session: Session, user_id: int) -> int | None:
-    """user_settings 행을 FOR UPDATE로 잠그고 learning_epoch 반환. 없으면 None."""
+def lock_settings(session: Session, user_id: int, *, write: bool = True) -> int | None:
+    """학습자 상태를 잠근다. 읽기는 SHARE, 변경·초기화는 UPDATE이며 commit하지 않는다."""
+    lock = "UPDATE" if write else "SHARE"
     return session.scalar(
         text(
-            "SELECT learning_epoch FROM sasu.user_settings "
-            "WHERE user_id = :uid FOR UPDATE"
+            "SELECT s.learning_epoch FROM sasu.user_settings s "
+            "JOIN sasu.app_users u ON u.user_id = s.user_id "
+            f"WHERE s.user_id = :uid AND u.role = 'LEARNER' FOR {lock} OF s"
         ),
         {"uid": user_id},
     )
@@ -52,8 +54,7 @@ def update_settings(session: Session, user_id: int, **fields: object) -> None:
     set_clause = ", ".join(f"{k} = :{k}" for k in safe)
     session.execute(
         text(
-            f"UPDATE sasu.user_settings SET {set_clause}, updated_at = now() "
-            "WHERE user_id = :uid"
+            f"UPDATE sasu.user_settings SET {set_clause}, updated_at = now() WHERE user_id = :uid"
         ),
         {"uid": user_id, **safe},
     )
@@ -86,16 +87,8 @@ def get_feed_position(session: Session, user_id: int):
         session.execute(
             text(
                 """
-                SELECT s.last_content_id,
-                       CASE
-                           WHEN s.last_content_id IS NULL THEN false
-                           WHEN c.content_id IS NULL
-                                OR c.status <> 'PUBLISHED'
-                                OR c.video_asset_id IS NULL THEN true
-                           ELSE false
-                       END AS resume_unavailable
+                SELECT s.last_content_id
                 FROM sasu.user_settings s
-                LEFT JOIN sasu.contents c ON c.content_id = s.last_content_id
                 WHERE s.user_id = :uid
                 """
             ),

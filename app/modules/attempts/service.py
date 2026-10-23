@@ -4,35 +4,20 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
 from app.core.exceptions import ApiError
 from app.core.security import Actor
-from app.integrations.storage import LocalVideoStorage
 from app.modules.attempts import repository
 from app.modules.attempts.schemas import Attempt, AttemptCreate, AttemptSubmission
 from app.modules.questions.schemas import LearnerQuestion
 from app.modules.questions.service import get_version, validate_options
 from app.modules.responses.schemas import ResponseDetail
 from app.modules.responses.service import get_response
-from app.modules.users.service import get_actor
+from app.modules.users.service import require_learner
+from app.modules.users.settings_service import current_epoch
+from app.modules.videos.availability import is_video_row_available
 
 CONTEXTS = {"VIDEO_QUIZ": "VIDEO_END", "FEED_REVIEW": "FEED_REVIEW", "WRONG_NOTE": "WRONG_REVIEW"}
 RESPONSE_PATHS = {value: key for key, value in CONTEXTS.items()}
-
-
-def check_learner(session: Session, actor_id: int, user_id: int) -> None:
-    actor = get_actor(session, actor_id)
-    if actor.role != "LEARNER":
-        raise ApiError(403, "ROLE_NOT_ALLOWED", "학습자만 풀이를 이용할 수 있습니다.")
-    if actor.user_id != user_id:
-        raise ApiError(404, "USER_NOT_FOUND", "대상 학습자를 찾을 수 없습니다.")
-
-
-def current_epoch(session: Session, user_id: int, *, write: bool) -> int:
-    epoch = repository.learner_epoch(session, user_id, write=write)
-    if epoch is None:
-        raise ApiError(404, "USER_NOT_FOUND", "대상 학습자를 찾을 수 없습니다.")
-    return epoch
 
 
 def make_attempt(session: Session, record) -> Attempt:
@@ -52,24 +37,11 @@ def make_attempt(session: Session, record) -> Attempt:
     )
 
 
-def media_available(relative_path: str | None) -> bool:
-    if not relative_path:
-        return False
-    try:
-        return (
-            LocalVideoStorage(get_settings().video_storage_root)
-            .resolve_path(relative_path)
-            .is_file()
-        )
-    except (OSError, RuntimeError, ValueError):
-        return False
-
-
 def create_attempt(
     session: Session, actor_id: int, user_id: int, record_generation: int, request: AttemptCreate
 ) -> tuple[Attempt, bool]:
     try:
-        check_learner(session, actor_id, user_id)
+        require_learner(session, actor_id, user_id)
         epoch = current_epoch(session, user_id, write=True)
         if epoch != record_generation + 1:
             raise ApiError(
@@ -101,7 +73,7 @@ def create_attempt(
         if (
             content is None
             or content["status"] != "PUBLISHED"
-            or not media_available(content["storage_path"])
+            or not is_video_row_available(content)
         ):
             raise ApiError(404, "QUESTION_NOT_FOUND", "이용 가능한 문항을 찾을 수 없습니다.")
         question = repository.lock_question(session, request.question_id)
@@ -138,7 +110,7 @@ def create_attempt(
 
 
 def recover_attempt(session: Session, actor_id: int, user_id: int, attempt_id: UUID) -> Attempt:
-    check_learner(session, actor_id, user_id)
+    require_learner(session, actor_id, user_id)
     epoch = current_epoch(session, user_id, write=False)
     record = repository.find_attempt(session, attempt_id)
     if record is None or record["user_id"] != user_id or record["learning_epoch"] != epoch:
@@ -155,7 +127,7 @@ def submit_response(
     request: AttemptSubmission,
 ) -> ResponseDetail:
     try:
-        check_learner(session, actor_id, user_id)
+        require_learner(session, actor_id, user_id)
         epoch = current_epoch(session, user_id, write=True)
         if epoch != record_generation + 1:
             raise ApiError(
@@ -181,7 +153,7 @@ def submit_response(
         if (
             content is None
             or content["status"] != "PUBLISHED"
-            or not media_available(content["storage_path"])
+            or not is_video_row_available(content)
         ):
             raise ApiError(404, "CONTENT_NOT_FOUND", "이용 가능한 콘텐츠를 찾을 수 없습니다.")
         validate_options(version)

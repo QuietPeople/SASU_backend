@@ -42,3 +42,11 @@ def get_user(session: Session, user_id: int) -> User:
     if user is None:
         raise ApiError(404, "USER_NOT_FOUND", "사용자를 찾을 수 없습니다.")
     return User.model_validate(user)
+
+
+def require_learner(session: Session, actor_id: int, user_id: int) -> None:
+    actor = get_actor(session, actor_id)
+    if actor.role != UserRole.LEARNER:
+        raise ApiError(403, "ROLE_NOT_ALLOWED", "학습자만 수행할 수 있습니다.")
+    if actor.user_id != user_id:
+        raise ApiError(404, "USER_NOT_FOUND", "대상 학습자를 찾을 수 없습니다.")

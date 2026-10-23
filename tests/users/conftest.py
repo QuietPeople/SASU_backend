@@ -88,17 +88,14 @@ def seed(database):
     learner_id = database.scalar(
         text("SELECT user_id FROM sasu.app_users WHERE username = 'user1'")
     )
-    admin_id = database.scalar(
-        text("SELECT user_id FROM sasu.app_users WHERE username = 'admin'")
-    )
+    admin_id = database.scalar(text("SELECT user_id FROM sasu.app_users WHERE username = 'admin'"))
     database.execute(
         text("INSERT INTO sasu.user_settings (user_id) VALUES (:uid)"),
         {"uid": learner_id},
     )
     database.execute(
         text(
-            "INSERT INTO sasu.categories (name) "
-            "VALUES ('카테고리A'), ('카테고리B'), ('카테고리C')"
+            "INSERT INTO sasu.categories (name) VALUES ('카테고리A'), ('카테고리B'), ('카테고리C')"
         )
     )
     database.flush()
@@ -114,6 +111,9 @@ def published_content(database, seed):
     admin_id = seed["admin_id"]
     cat_id = seed["cat_ids"][0]
     asset_id = str(uuid4())
+    video_path = get_settings().video_storage_root / "videos/test.mp4"
+    video_path.parent.mkdir(parents=True, exist_ok=True)
+    video_path.write_bytes(b"x" * 1048576)
 
     tag_id = database.scalar(
         text("INSERT INTO sasu.tags (name) VALUES ('테스트태그') RETURNING tag_id")

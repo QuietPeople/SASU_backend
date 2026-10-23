@@ -7,7 +7,7 @@ from app.integrations.storage import LocalVideoStorage
 from app.modules.contents import repository as contents_repository
 from app.modules.contents.models import ContentStatus
 from app.modules.contents.service import build_content_summary, is_video_available
-from app.modules.saved_contents import repository, temporary_bridge
+from app.modules.saved_contents import repository
 from app.modules.saved_contents.repository import SavedCandidate
 from app.modules.saved_contents.schemas import (
     SavedContentsPage,
@@ -17,14 +17,8 @@ from app.modules.saved_contents.schemas import (
 )
 from app.modules.users.models import UserRole
 from app.modules.users.repository import get_user
-from app.modules.users.service import get_actor
-
-
-def _lock_epoch(session: Session, user_id: int) -> int:
-    epoch = temporary_bridge.lock_current_epoch(session, user_id)
-    if epoch is None:
-        raise ApiError(404, "USER_NOT_FOUND", "대상 학습자를 찾을 수 없습니다.")
-    return epoch
+from app.modules.users.service import get_actor, require_learner
+from app.modules.users.settings_service import current_epoch
 
 
 def set_saved(
@@ -37,16 +31,8 @@ def set_saved(
     saved: bool,
 ) -> SaveState:
     with session.begin():
-        actor = get_actor(session, actor_id)
-        if actor.role != UserRole.LEARNER:
-            raise ApiError(403, "ROLE_NOT_ALLOWED", "학습자만 저장 상태를 변경할 수 있습니다.")
-        if actor.user_id != user_id:
-            raise ApiError(404, "USER_NOT_FOUND", "대상 학습자를 찾을 수 없습니다.")
-        epoch = _lock_epoch(session, user_id)
-        if epoch != record_generation + 1:
-            raise ApiError(
-                409, "RECORD_GENERATION_MISMATCH", "현재 기록 세대를 다시 확인해 주세요."
-            )
+        require_learner(session, actor_id, user_id)
+        epoch = current_epoch(session, user_id, record_generation)
         content = contents_repository.get_content_for_update(session, content_id)
         if content is None or (saved and content.status != ContentStatus.PUBLISHED):
             raise ApiError(404, "CONTENT_NOT_FOUND", "접근 가능한 콘텐츠가 없습니다.")
@@ -73,7 +59,7 @@ def list_saved_contents(
         if target is None or target.role != UserRole.LEARNER:
             raise ApiError(404, "USER_NOT_FOUND", "조회 가능한 학습자가 없습니다.")
         # 후보와 개인 상태를 읽는 사이에 초기화·저장 변경이 끼어들지 않게 같은 행을 잠근다.
-        _lock_epoch(session, user_id)
+        current_epoch(session, user_id)
         if (
             query.category_id is not None
             and contents_repository.get_category(session, query.category_id) is None
@@ -83,7 +69,7 @@ def list_saved_contents(
             session, user_id, category_id=query.category_id
         )
         playable = filter_playable_candidates(candidates, storage)
-        presentations = temporary_bridge.load_saved_presentations(
+        presentations = contents_repository.load_presentations(
             session, [item.content for item in playable], user_id
         )
         items = [

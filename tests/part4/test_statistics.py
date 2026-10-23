@@ -590,3 +590,100 @@ def test_default_app_routes_and_contract():
         "wrong_review",
         "flashcards",
     }
+
+
+@pytest.mark.parametrize("damage", ["truncated", "missing"])
+def test_media_availability_agrees_across_parts(client, database, records, damage):
+    r = records
+    uid, cid = r["user1"], r["content"]
+    learner = {**headers(r, "user1"), "X-Record-Generation": "0"}
+    execute(
+        database,
+        """INSERT INTO sasu.watch_records
+        (user_id, learning_epoch, content_id, first_played_at, last_watched_at,
+         view_counted_at, completed_at, max_coverage_ratio)
+        VALUES (:u,1,:c,now(),now(),now(),now(),1)""",
+        u=uid,
+        c=cid,
+    )
+    other = execute(
+        database,
+        """INSERT INTO sasu.contents (created_by_user_id)
+        VALUES (:u) RETURNING content_id""",
+        u=r["admin"],
+    ).scalar_one()
+    execute(
+        database, "INSERT INTO sasu.curriculum_items VALUES (:cr,:c,2)", cr=r["curriculum"], c=other
+    )
+    answer(database, r, "VIDEO_END", "CORRECT")
+    assert client.put(f"/api/users/{uid}/contents/{cid}/saved", headers=learner).status_code == 200
+    assert client.patch(
+        f"/api/users/{uid}/feed-state", headers=learner, json={"last_content_id": cid}
+    ).json()["resume_available"]
+    candidate_url = f"/api/users/{uid}/reviews/feed/candidate"
+    candidate_body = {"shown_question_version_ids": [], "retry_question_version_ids": []}
+    assert client.post(candidate_url, headers=learner, json=candidate_body).json()["candidate"]
+    dashboard_url = f"/api/users/{uid}/dashboard"
+    assert (
+        client.get(dashboard_url, headers=learner).json()["curriculums"][0]["available_steps"] == 1
+    )
+
+    # 이 fixture는 요청 사이 Session을 공유하므로 조회 트랜잭션을 끝낸다.
+    database.commit()
+    path = get_settings().video_storage_root / "test.mp4"
+    if damage == "truncated":
+        path.write_bytes(b"x")
+    else:
+        path.unlink()
+    assert client.get(f"/api/contents/{cid}/video").status_code == 404
+    assert not client.get(f"/api/users/{uid}/feed-state", headers=learner).json()[
+        "resume_available"
+    ]
+    assert client.get(f"/api/users/{uid}/saved-contents", headers=learner).json()["total"] == 0
+    assert (
+        client.post(candidate_url, headers=learner, json=candidate_body).json()["candidate"] is None
+    )
+    result = client.post(
+        f"/api/users/{uid}/question-attempts",
+        headers=learner,
+        json={
+            "attempt_id": str(uuid4()),
+            "question_id": r["quiz"],
+            "expected_question_version_id": r["version"],
+            "response_path": "VIDEO_QUIZ",
+        },
+    )
+    assert result.status_code == 404, result.text
+    progress = client.get(
+        f"/api/users/{uid}/curriculums/{r['curriculum']}/progress", headers=learner
+    ).json()
+    editor = client.get(f"/api/curriculums/{r['curriculum']}?view=editor", headers=headers(r))
+    assert editor.status_code == 200, editor.text
+    assert editor.json()["steps"][0]["available"] is False
+    assert progress["completed_steps"] == 1
+    assert (
+        client.get(dashboard_url, headers=learner).json()["curriculums"][0]["available_steps"] == 0
+    )
+    assert (
+        execute(
+            database, "SELECT count(*) FROM sasu.saved_contents WHERE user_id=:u", u=uid
+        ).scalar_one()
+        == 1
+    )
+
+
+def test_content_summary_agrees_in_content_curriculum_and_wrong_answers(client, database, records):
+    r = records
+    uid, cid = r["user1"], r["content"]
+    learner = {**headers(r, "user1"), "X-Record-Generation": "0"}
+    answer(database, r, "VIDEO_END", "WRONG")
+    assert client.put(f"/api/users/{uid}/contents/{cid}/like", headers=learner).status_code == 200
+    assert client.put(f"/api/users/{uid}/contents/{cid}/saved", headers=learner).status_code == 200
+    detail = client.get(f"/api/contents/{cid}", headers=learner)
+    assert detail.status_code == 200, detail.text
+    course = client.get(f"/api/curriculums/{r['curriculum']}", headers=learner)
+    assert course.status_code == 200, course.text
+    wrongs = client.get(f"/api/users/{uid}/reviews/wrong-answers", headers=learner)
+    assert wrongs.status_code == 200, wrongs.text
+    assert detail.json()["content"] == course.json()["steps"][0]["content"]
+    assert detail.json()["content"] == wrongs.json()["items"][0]["content"]

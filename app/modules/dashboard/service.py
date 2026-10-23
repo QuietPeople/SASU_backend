@@ -1,8 +1,8 @@
 from app.core.exceptions import ApiError
-from app.modules.curricula.service import media_available
 from app.modules.dashboard import repository
 from app.modules.dashboard.schemas import CategoryDashboard, Dashboard
 from app.modules.statistics.service import rate
+from app.modules.videos.availability import is_video_row_available
 
 
 def check_target(actor, user_id):
@@ -29,7 +29,7 @@ def summary(session, user_id, actor):
     courses = []
     for course in row["curriculums"]:
         course["available_steps"] = sum(
-            media_available(path) for path in course.pop("media_paths", []) or []
+            is_video_row_available(video) for video in course.pop("media", []) or []
         )
         courses.append(course)
     return Dashboard(

@@ -1,125 +1,110 @@
-from uuid import UUID
-
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ApiError
-from app.modules.users.models import UserRole
-from app.modules.users.service import get_actor
+from app.modules.users.service import require_learner
+from app.modules.users.settings_service import current_epoch
 from app.modules.watch_records import repository as repo
 from app.modules.watch_records.schemas import WatchVisitBody, WatchVisitResult
 
 
-def _check_epoch(learning_epoch: int, record_generation: int) -> None:
-    if learning_epoch != record_generation + 1:
-        raise ApiError(409, "RECORD_GENERATION_MISMATCH", "현재 기록 세대를 다시 확인해 주세요.")
-
-
-def _clip_ranges(
-    ranges: list[list[float]], duration: float
-) -> list[list[float]]:
-    """Clip each range to [0, duration] and drop zero-length or invalid ranges."""
-    clipped = []
-    for start, end in ranges:
-        s = max(0.0, start)
-        e = min(duration, end)
-        if e > s:
-            clipped.append([s, e])
-    return clipped
+def _merge_ranges(ranges: list[list[float]]) -> list[list[float]]:
+    merged: list[list[float]] = []
+    for start, end in sorted(ranges):
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return merged
 
 
 def _compute_coverage(ranges: list[list[float]], duration: float) -> float:
-    """Merge overlapping ranges and compute covered / duration (0~1)."""
-    if not ranges or duration <= 0:
-        return 0.0
-    sorted_r = sorted(ranges, key=lambda r: r[0])
-    merged = [sorted_r[0][:]]
-    for s, e in sorted_r[1:]:
-        if s <= merged[-1][1]:
-            merged[-1][1] = max(merged[-1][1], e)
-        else:
-            merged.append([s, e])
-    total = sum(e - s for s, e in merged)
-    return min(total / duration, 1.0)
+    return sum(end - start for start, end in _merge_ranges(ranges)) / duration
 
 
 def report_watch_visit(
     session: Session,
     actor_id: int,
+    user_id: int,
     content_id: int,
-    visit_id: UUID,
     record_generation: int,
     body: WatchVisitBody,
 ) -> WatchVisitResult:
-    ctx = session.begin_nested() if session.in_transaction() else session.begin()
-    with ctx:
-        actor = get_actor(session, actor_id)
-        if actor.role != UserRole.LEARNER:
-            raise ApiError(403, "ROLE_NOT_ALLOWED", "학습자만 시청 기록을 보고할 수 있습니다.")
-
-        # Lock order: user_settings → contents → watch_visits → watch_records
-        learning_epoch = repo.lock_settings(session, actor.user_id)
-        if learning_epoch is None:
-            raise ApiError(404, "USER_NOT_FOUND", "사용자 설정을 찾을 수 없습니다.")
-        _check_epoch(learning_epoch, record_generation)
-
+    with session.begin_nested() if session.in_transaction() else session.begin():
+        require_learner(session, actor_id, user_id)
+        epoch = current_epoch(session, user_id, record_generation)
         content = repo.lock_content(session, content_id)
-        if content is None or content["status"] != "PUBLISHED":
+        if content is None or content["status"] != "PUBLISHED" or content["video_asset_id"] is None:
             raise ApiError(404, "CONTENT_NOT_FOUND", "접근 가능한 콘텐츠가 없습니다.")
-        if content["video_asset_id"] is None or content["duration_seconds"] is None:
-            raise ApiError(404, "CONTENT_NOT_FOUND", "콘텐츠에 영상 자산이 없습니다.")
-
-        current_asset_id = str(content["video_asset_id"])
-        video_changed = current_asset_id != str(body.video_asset_id)
-        duration = float(content["duration_seconds"])
-
-        clipped = _clip_ranges(body.watched_ranges, duration)
-
-        _, elapsed, stored_ranges, _ = repo.upsert_visit(
-            session,
-            visit_id=visit_id,
-            user_id=actor.user_id,
-            learning_epoch=learning_epoch,
-            content_id=content_id,
-            video_asset_id=body.video_asset_id,
-            context=body.context,
-            elapsed_seconds=body.elapsed_seconds,
-            watched_ranges=clipped,
-            sequence=body.sequence,
-        )
-
-        effective_elapsed = float(elapsed)
-        effective_ranges = stored_ranges if isinstance(stored_ranges, list) else []
-        coverage = _compute_coverage(effective_ranges, duration)
-
-        if video_changed:
-            existing = repo.get_watch_record(session, actor.user_id, content_id)
-            return WatchVisitResult(
-                view_counted=False,
-                completed=existing["completed_at"] is not None if existing else False,
-                coverage=coverage,
-                video_changed=True,
+        if str(content["video_asset_id"]) != body.media_revision:
+            raise ApiError(
+                409, "VIDEO_CHANGED", "영상이 교체되었습니다. 콘텐츠를 다시 조회해 주세요."
             )
+        duration = float(content["duration_seconds"])
+        segments = _merge_ranges(body.watched_segments)
+        covered = sum(end - start for start, end in segments)
+        if (
+            any(end > duration for _, end in segments)
+            or covered > body.actual_played_seconds + 0.001
+        ):
+            raise ApiError(
+                422, "INVALID_WATCH_REPORT", "시청 구간과 실제 재생 시간이 일치하지 않습니다."
+            )
+        ratio = covered / duration
+        context = "SAVED" if body.context == "LIBRARY" else body.context
 
-        # Snapshot before upsert to determine what changed
-        before = repo.get_watch_record(session, actor.user_id, content_id)
-        was_view_counted = before["view_counted_at"] is not None if before else False
+        # 같은 방문 ID를 다른 사용자·콘텐츠에 재사용하지 못하도록 최초 등록도 직렬화한다.
+        repo.lock_visit_id(session, body.visit_id)
+        visit = repo.get_visit(session, body.visit_id)
+        if visit is not None and (
+            visit["user_id"] != user_id
+            or visit["learning_epoch"] != epoch
+            or visit["content_id"] != content_id
+            or str(visit["video_asset_id"]) != body.media_revision
+            or visit["context"] != context
+        ):
+            raise ApiError(422, "INVALID_WATCH_REPORT", "다른 방문에 사용한 visit_id입니다.")
 
+        before = repo.get_watch_record(session, user_id, content_id)
+        effective_elapsed = max(
+            float(visit["elapsed_seconds"]) if visit else 0, body.actual_played_seconds
+        )
+        previous_segments = visit["watched_ranges"] if visit else []
+        previous_ratio = _compute_coverage(previous_segments, duration)
+        effective_segments = segments if ratio >= previous_ratio else previous_segments
+        repo.save_visit(
+            session,
+            body.visit_id,
+            user_id,
+            epoch,
+            content_id,
+            content["video_asset_id"],
+            context,
+            effective_elapsed,
+            effective_segments,
+        )
         repo.upsert_watch_record(
             session,
-            user_id=actor.user_id,
-            learning_epoch=learning_epoch,
+            user_id=user_id,
+            learning_epoch=epoch,
             content_id=content_id,
             elapsed_seconds=effective_elapsed,
-            coverage=coverage,
+            coverage=max(ratio, previous_ratio),
         )
-
-        after = repo.get_watch_record(session, actor.user_id, content_id)
-        is_view_counted = after["view_counted_at"] is not None if after else False
-        is_completed = after["completed_at"] is not None if after else False
-
-    return WatchVisitResult(
-        view_counted=not was_view_counted and is_view_counted,
-        completed=is_completed,
-        coverage=coverage,
-        video_changed=False,
-    )
+        after = repo.get_watch_record(session, user_id, content_id)
+        counted = after["view_counted_at"] is not None
+        return WatchVisitResult(
+            user_id=user_id,
+            content_id=content_id,
+            visit_id=body.visit_id,
+            view_counted=counted,
+            newly_view_counted=counted and (before is None or before["view_counted_at"] is None),
+            watch_completed=after["completed_at"] is not None,
+            visit_watch_percent=round(ratio * 100, 2),
+            max_watch_percent=round(float(after["max_coverage_ratio"]) * 100, 2),
+            feed_completion_eligible=body.context == "FEED" and ratio >= 0.9,
+            view_count=repo.view_count(session, content_id),
+            first_played_at=after["first_played_at"],
+            last_watched_at=after["last_watched_at"],
+            completed_at=after["completed_at"],
+            record_generation=epoch - 1,
+        )

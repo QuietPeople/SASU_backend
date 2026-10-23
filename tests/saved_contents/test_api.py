@@ -6,8 +6,9 @@ from sqlalchemy import event, select, text, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.modules.contents import repository as contents_repository
 from app.modules.contents.models import Content, ContentStatus, VideoAsset
-from app.modules.saved_contents import repository, temporary_bridge
+from app.modules.saved_contents import repository
 from app.modules.saved_contents.tables import saved_contents
 from app.modules.users.models import User, UserRole
 
@@ -248,7 +249,7 @@ def test_unavailable_external_lookup_is_not_a_successful_empty_list(api_context,
     def fail(*args):
         raise SQLAlchemyError("공개하면 안 되는 내부 조회 오류")
 
-    monkeypatch.setattr(temporary_bridge, "load_saved_presentations", fail)
+    monkeypatch.setattr(contents_repository, "load_presentations", fail)
     response = ctx.client.get(ctx.list_path, headers=ctx.headers)
     assert response.status_code == 500
     assert response.json()["detail"]["code"] == "INTERNAL_ERROR"

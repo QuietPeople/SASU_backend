@@ -1,26 +1,23 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Depends, Query
 
-from app.api.dependencies import ActorId, Database, ResourceId, reject_query_parameters
+from app.api.dependencies import (
+    ActorId,
+    Database,
+    GenerationHeader,
+    ResourceId,
+    reject_query_parameters,
+)
 from app.core.config import get_settings
 from app.core.exceptions import ErrorResponse
 from app.integrations.storage import LocalVideoStorage
 from app.modules.saved_contents import service
 from app.modules.saved_contents.schemas import (
-    RecordGeneration,
     SavedContentsPage,
     SavedContentsQuery,
     SaveState,
 )
-
-GenerationHeader = Annotated[
-    RecordGeneration,
-    Header(
-        alias="X-Record-Generation",
-        description="현재 학습 기록 세대. 최초 0이며 DB learning_epoch보다 1 작습니다.",
-    ),
-]
 
 router = APIRouter(
     prefix="/users/{user_id}",
@@ -45,7 +42,6 @@ router = APIRouter(
         "요청 본문은 없습니다."
     ),
     dependencies=[Depends(reject_query_parameters)],
-    openapi_extra={"x-temporary-integrations": ["SAV-T01", "SAV-T05"]},
 )
 def save_content(
     user_id: ResourceId,
@@ -67,7 +63,6 @@ def save_content(
         "이미 해제했어도 200을 반환하며 이전 세대의 요청은 409로 거절합니다."
     ),
     dependencies=[Depends(reject_query_parameters)],
-    openapi_extra={"x-temporary-integrations": ["SAV-T01", "SAV-T05"]},
 )
 def unsave_content(
     user_id: ResourceId,
@@ -88,7 +83,6 @@ def unsave_content(
         "본인 또는 관리자가 대상 학습자의 저장 목록을 조회합니다. 최신 저장순이며 "
         "비공개·재생 불가 콘텐츠는 제외합니다. 조회로 저장 관계를 삭제하지 않습니다."
     ),
-    openapi_extra={"x-temporary-integrations": ["SAV-T01", "SAV-T02", "SAV-T03", "SAV-T04"]},
 )
 def saved_contents(
     user_id: ResourceId,

@@ -17,6 +17,8 @@ def media_row():
         "position": 2,
         "status": "PUBLISHED",
         "storage_path": "video.mp4",
+        "size_bytes": 5,
+        "mime_type": "video/mp4",
         "video_asset_id": uuid4(),
         "title": "콘텐츠",
         "category_id": 1,

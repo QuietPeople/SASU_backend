@@ -1,16 +1,10 @@
 import json
-from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-
-def lock_settings(session: Session, user_id: int) -> int | None:
-    return session.scalar(
-        text("SELECT learning_epoch FROM sasu.user_settings WHERE user_id = :uid FOR UPDATE"),
-        {"uid": user_id},
-    )
+from app.modules.watch_records.tables import watch_records
 
 
 def lock_content(session: Session, content_id: int):
@@ -33,93 +27,12 @@ def lock_content(session: Session, content_id: int):
     )
 
 
-def upsert_visit(
-    session: Session,
-    *,
-    visit_id: UUID,
-    user_id: int,
-    learning_epoch: int,
-    content_id: int,
-    video_asset_id: UUID,
-    context: str,
-    elapsed_seconds: float,
-    watched_ranges: list[list[float]],
-    sequence: int,
-) -> tuple[bool, Decimal, list, int]:
-    """Upsert watch_visits row.
-
-    Returns (was_updated, elapsed_seconds, watched_ranges, last_sequence).
-    was_updated=False when the given sequence is stale (≤ stored last_sequence).
-    """
-    row = (
-        session.execute(
-            text(
-                """
-                INSERT INTO sasu.watch_visits
-                  (visit_id, user_id, learning_epoch, content_id, video_asset_id,
-                   context, elapsed_seconds, watched_ranges, last_sequence)
-                VALUES
-                  (:vid, :uid, :epoch, :cid, CAST(:asset AS uuid),
-                   :ctx, :elapsed, CAST(:ranges AS jsonb), :seq)
-                ON CONFLICT (visit_id) DO UPDATE SET
-                  elapsed_seconds = EXCLUDED.elapsed_seconds,
-                  watched_ranges  = EXCLUDED.watched_ranges,
-                  last_sequence   = EXCLUDED.last_sequence
-                WHERE sasu.watch_visits.last_sequence < EXCLUDED.last_sequence
-                RETURNING elapsed_seconds, watched_ranges, last_sequence
-                """
-            ),
-            {
-                "vid": str(visit_id),
-                "uid": user_id,
-                "epoch": learning_epoch,
-                "cid": content_id,
-                "asset": str(video_asset_id),
-                "ctx": context,
-                "elapsed": elapsed_seconds,
-                "ranges": json.dumps(watched_ranges),
-                "seq": sequence,
-            },
-        )
-        .mappings()
-        .one_or_none()
-    )
-
-    if row is not None:
-        ranges = row["watched_ranges"]
-        if isinstance(ranges, str):
-            ranges = json.loads(ranges)
-        return True, row["elapsed_seconds"], ranges, row["last_sequence"]
-
-    # Stale sequence — read current state
-    current = (
-        session.execute(
-            text(
-                "SELECT elapsed_seconds, watched_ranges, last_sequence"
-                " FROM sasu.watch_visits WHERE visit_id = :vid"
-            ),
-            {"vid": str(visit_id)},
-        )
-        .mappings()
-        .one_or_none()
-    )
-    if current is None:
-        return False, Decimal(0), [], 0
-    ranges = current["watched_ranges"]
-    if isinstance(ranges, str):
-        ranges = json.loads(ranges)
-    return False, current["elapsed_seconds"], ranges, current["last_sequence"]
-
-
 def get_watch_record(session: Session, user_id: int, content_id: int):
     return (
         session.execute(
-            text(
-                "SELECT view_counted_at, completed_at"
-                " FROM sasu.watch_records"
-                " WHERE user_id = :uid AND content_id = :cid"
-            ),
-            {"uid": user_id, "cid": content_id},
+            select(watch_records).where(
+                watch_records.c.user_id == user_id, watch_records.c.content_id == content_id
+            )
         )
         .mappings()
         .one_or_none()
@@ -150,7 +63,7 @@ def upsert_watch_record(
                :coverage)
             ON CONFLICT (user_id, content_id) DO UPDATE SET
               learning_epoch    = EXCLUDED.learning_epoch,
-              last_watched_at   = now(),
+              last_watched_at   = clock_timestamp(),
               view_counted_at   = COALESCE(
                                     sasu.watch_records.view_counted_at,
                                     EXCLUDED.view_counted_at),
@@ -169,4 +82,56 @@ def upsert_watch_record(
             "elapsed": float(elapsed_seconds),
             "coverage": float(coverage),
         },
+    )
+
+
+def lock_visit_id(session: Session, visit_id: UUID) -> None:
+    session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+        {"key": f"watch:{visit_id}"},
+    )
+
+
+def get_visit(session: Session, visit_id: UUID):
+    return (
+        session.execute(
+            text("SELECT * FROM sasu.watch_visits WHERE visit_id = :id FOR UPDATE"),
+            {"id": visit_id},
+        )
+        .mappings()
+        .one_or_none()
+    )
+
+
+def save_visit(session, visit_id, user_id, epoch, content_id, asset_id, context, elapsed, ranges):
+    session.execute(
+        text("""INSERT INTO sasu.watch_visits
+            (visit_id, user_id, learning_epoch, content_id, video_asset_id,
+             context, elapsed_seconds, watched_ranges, last_sequence)
+            VALUES (:id, :user, :epoch, :content, :asset, :context, :elapsed,
+                    CAST(:ranges AS jsonb), 0)
+            ON CONFLICT (visit_id) DO UPDATE SET
+              elapsed_seconds = EXCLUDED.elapsed_seconds,
+              watched_ranges = EXCLUDED.watched_ranges,
+              last_sequence = sasu.watch_visits.last_sequence + 1"""),
+        {
+            "id": visit_id,
+            "user": user_id,
+            "epoch": epoch,
+            "content": content_id,
+            "asset": asset_id,
+            "context": context,
+            "elapsed": elapsed,
+            "ranges": json.dumps(ranges),
+        },
+    )
+
+
+def view_count(session: Session, content_id: int) -> int:
+    return (
+        session.scalar(
+            text("SELECT view_count FROM sasu.content_metrics WHERE content_id = :id"),
+            {"id": content_id},
+        )
+        or 0
     )

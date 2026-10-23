@@ -8,16 +8,16 @@ from app.modules.categories.router import router as categories_router
 from app.modules.contents.router import router as contents_router
 from app.modules.curricula.router import router as curricula_router
 from app.modules.dashboard.router import router as dashboard_router
+from app.modules.events.router import router as events_router
 from app.modules.likes.router import router as likes_router
 from app.modules.questions.router import router as questions_router
 from app.modules.responses.router import router as responses_router
-from app.modules.statistics.router import router as statistics_router
 from app.modules.reviews.router import router as reviews_router
 from app.modules.saved_contents.router import router as saved_contents_router
+from app.modules.statistics.router import router as statistics_router
 from app.modules.system.router import router as system_router
 from app.modules.tags.router import router as tags_router
 from app.modules.users.router import router as users_router
-from app.modules.events.router import router as events_router
 from app.modules.users.settings_router import router as user_settings_router
 from app.modules.watch_records.router import router as watch_records_router
 

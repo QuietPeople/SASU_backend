@@ -1,43 +1,38 @@
-from uuid import UUID
-
 from fastapi import APIRouter, Depends
 
-from app.api.dependencies import ActorId, Database, ResourceId, reject_query_parameters
+from app.api.dependencies import (
+    ActorId,
+    Database,
+    GenerationHeader,
+    ResourceId,
+    reject_query_parameters,
+)
 from app.core.exceptions import ErrorResponse
-from app.modules.users.settings_router import GenerationHeader
 from app.modules.watch_records import service
 from app.modules.watch_records.schemas import WatchVisitBody, WatchVisitResult
 
 router = APIRouter(
-    prefix="/contents/{content_id}/watch-visits",
+    prefix="/users/{user_id}/contents/{content_id}",
     tags=["시청 기록"],
     dependencies=[Depends(reject_query_parameters)],
-    responses={
-        422: {"model": ErrorResponse, "description": "잘못된 요청"},
-        500: {"model": ErrorResponse, "description": "내부 처리 실패"},
-    },
+    responses={code: {"model": ErrorResponse} for code in (403, 404, 409, 422, 500)},
 )
 
 
-@router.put(
-    "/{visit_id}",
+@router.post(
+    "/watch-reports",
     response_model=WatchVisitResult,
     operation_id="API-WCH-01",
-    summary="API-WCH-01 시청 방문 보고",
-    responses={
-        403: {"model": ErrorResponse, "description": "학습자 역할 필요"},
-        404: {"model": ErrorResponse, "description": "콘텐츠 없음"},
-        409: {"model": ErrorResponse, "description": "학습 기록 세대 불일치"},
-    },
+    summary="API-WCH-01 실제 시청 기록 반영",
 )
 def report_watch_visit(
+    user_id: ResourceId,
     content_id: ResourceId,
-    visit_id: UUID,
     session: Database,
     actor_id: ActorId,
     record_generation: GenerationHeader,
     body: WatchVisitBody,
 ) -> WatchVisitResult:
     return service.report_watch_visit(
-        session, actor_id, content_id, visit_id, record_generation, body
+        session, actor_id, user_id, content_id, record_generation, body
     )
