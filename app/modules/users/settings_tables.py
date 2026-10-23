@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Column, Integer, MetaData, SmallInteger, String, TIMESTAMP, Table
+from sqlalchemy import TIMESTAMP, BigInteger, Column, Integer, MetaData, SmallInteger, String, Table
 
 metadata = MetaData()
 
