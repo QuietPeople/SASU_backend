@@ -58,6 +58,7 @@ def load_steps(session: Session, curriculum_ids: list[int], user_id: int | None)
             SELECT i.curriculum_id, i.position, c.content_id, c.title, c.status,
                    c.category_id, category.name AS category_name,
                    asset.video_asset_id, asset.storage_path, asset.duration_seconds,
+                   asset.size_bytes, asset.mime_type,
                    metrics.view_count, metrics.like_count,
                    COALESCE((SELECT jsonb_agg(jsonb_build_object('tag_id', t.tag_id, 'name', t.name)
                                              ORDER BY t.tag_id)

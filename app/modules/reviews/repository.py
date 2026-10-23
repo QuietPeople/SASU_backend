@@ -136,7 +136,8 @@ def retry_versions(session: Session, user_id: int, epoch: int, version_ids: list
 
 def feed_candidates(session: Session, user_id: int, epoch: int, shown: list[int], retry: list[int]):
     return session.execute(
-        text(f"""SELECT q.quiz_id, v.quiz_version_id, asset.storage_path
+        text(f"""SELECT q.quiz_id, v.quiz_version_id, asset.storage_path,
+                        asset.size_bytes, asset.mime_type, asset.duration_seconds
                  {CURRENT_QUESTION}
                  JOIN sasu.video_assets asset ON asset.video_asset_id = c.video_asset_id
                  JOIN sasu.watch_records watch ON watch.content_id = c.content_id

@@ -23,6 +23,7 @@ from app.modules.contents.schemas import VideoInfo, VideoQuery
 from app.modules.contents.urls import build_video_url
 from app.modules.users.models import UserRole
 from app.modules.users.service import get_actor, require_admin
+from app.modules.videos.availability import is_video_available
 from app.modules.videos.service import IngestedVideo, VideoIngestService
 
 logger = logging.getLogger(__name__)
@@ -207,12 +208,18 @@ def get_video(
                     409, "VIDEO_CHANGED", "영상이 변경되었습니다. 현재 revision을 확인해 주세요."
                 )
             try:
-                path = storage.resolve_path(asset.storage_path)
-                if not path.is_file():
+                if not is_video_available(
+                    asset.storage_path,
+                    size_bytes=asset.size_bytes,
+                    mime_type=asset.mime_type,
+                    duration_seconds=asset.duration_seconds,
+                    storage=storage,
+                ):
                     raise FileNotFoundError
+                path = storage.resolve_path(asset.storage_path)
                 opened = path.open("rb")
                 size = os.fstat(opened.fileno()).st_size
-                if size <= 0:
+                if size <= 0 or size != asset.size_bytes:
                     raise FileNotFoundError
             except (OSError, ValueError) as exc:
                 raise ApiError(

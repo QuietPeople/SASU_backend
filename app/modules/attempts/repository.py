@@ -6,8 +6,6 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 
-
-
 def lock_attempt_id(session: Session, attempt_id: UUID) -> None:
     # 아직 행이 없는 같은 UUID의 동시 생성을 다른 사용자 사이에서도 직렬화한다.
     # PK는 최종 무결성을 보장하고, 이 잠금은 충돌을 업무 오류로 반환하기 위한 것이다.
@@ -44,7 +42,8 @@ def lock_content(session: Session, content_id: int):
     return (
         session.execute(
             text(
-                """SELECT c.status, v.storage_path FROM sasu.contents c
+                """SELECT c.status, v.storage_path, v.size_bytes, v.mime_type, v.duration_seconds
+                   FROM sasu.contents c
                    LEFT JOIN sasu.video_assets v USING (video_asset_id)
                    WHERE c.content_id = :id FOR SHARE OF c"""
             ),

@@ -4,10 +4,8 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
 from app.core.exceptions import ApiError
 from app.core.security import Actor
-from app.integrations.storage import LocalVideoStorage
 from app.modules.attempts import repository
 from app.modules.attempts.schemas import Attempt, AttemptCreate, AttemptSubmission
 from app.modules.questions.schemas import LearnerQuestion
@@ -16,13 +14,10 @@ from app.modules.responses.schemas import ResponseDetail
 from app.modules.responses.service import get_response
 from app.modules.users.service import require_learner
 from app.modules.users.settings_service import current_epoch
+from app.modules.videos.availability import is_video_row_available
 
 CONTEXTS = {"VIDEO_QUIZ": "VIDEO_END", "FEED_REVIEW": "FEED_REVIEW", "WRONG_NOTE": "WRONG_REVIEW"}
 RESPONSE_PATHS = {value: key for key, value in CONTEXTS.items()}
-
-
-
-
 
 
 def make_attempt(session: Session, record) -> Attempt:
@@ -40,19 +35,6 @@ def make_attempt(session: Session, record) -> Attempt:
         else None,
         record_generation=record["learning_epoch"] - 1,
     )
-
-
-def media_available(relative_path: str | None) -> bool:
-    if not relative_path:
-        return False
-    try:
-        return (
-            LocalVideoStorage(get_settings().video_storage_root)
-            .resolve_path(relative_path)
-            .is_file()
-        )
-    except (OSError, RuntimeError, ValueError):
-        return False
 
 
 def create_attempt(
@@ -91,7 +73,7 @@ def create_attempt(
         if (
             content is None
             or content["status"] != "PUBLISHED"
-            or not media_available(content["storage_path"])
+            or not is_video_row_available(content)
         ):
             raise ApiError(404, "QUESTION_NOT_FOUND", "이용 가능한 문항을 찾을 수 없습니다.")
         question = repository.lock_question(session, request.question_id)
@@ -171,7 +153,7 @@ def submit_response(
         if (
             content is None
             or content["status"] != "PUBLISHED"
-            or not media_available(content["storage_path"])
+            or not is_video_row_available(content)
         ):
             raise ApiError(404, "CONTENT_NOT_FOUND", "이용 가능한 콘텐츠를 찾을 수 없습니다.")
         validate_options(version)

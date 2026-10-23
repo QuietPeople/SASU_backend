@@ -5,11 +5,11 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from app.modules.videos.availability import is_video_row_available
+
 from app.api.schemas import Page
-from app.core.config import get_settings
 from app.core.exceptions import ApiError
 from app.core.security import Actor
-from app.integrations.storage import LocalVideoStorage
 from app.modules.contents.schemas import ContentSummary
 from app.modules.contents.urls import build_video_url
 from app.modules.curricula import repository
@@ -44,18 +44,10 @@ def target_user(session: Session, query: CurriculumQuery, actor: Actor) -> int |
     return target
 
 
-def media_available(relative_path: str | None) -> bool:
-    if not relative_path:
-        return False
-    try:
-        storage = LocalVideoStorage(get_settings().video_storage_root)
-        return storage.resolve_path(relative_path).is_file()
-    except (OSError, RuntimeError, ValueError):
-        return False
 
 
 def make_step(row, user_id: int | None, view: str, actor_id: int) -> CurriculumStep:
-    available = row["status"] == "PUBLISHED" and media_available(row["storage_path"])
+    available = row["status"] == "PUBLISHED" and is_video_row_available(row)
     watched = row["watched"] if user_id is not None else None
     correct = row["correct"] if user_id is not None else None
     content = None

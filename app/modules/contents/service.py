@@ -23,8 +23,7 @@ from app.modules.users.models import UserRole
 from app.modules.users.repository import get_user
 from app.modules.users.service import get_actor, require_admin
 
-# 데이터 처리 모듈이 저장하는 형식(MP4 faststart 또는 WebM)
-PLAYABLE_MIME_TYPES = frozenset({"video/mp4", "video/webm"})
+from app.modules.videos import availability
 
 
 def _utc(value: datetime) -> datetime:
@@ -90,20 +89,14 @@ def _detail(item: repository.Presentation, actor_id: int, related: list[dict]) -
 
 
 def is_video_available(video: VideoAsset | None, storage: LocalVideoStorage) -> bool:
-    if video is None:
-        return False
-    try:
-        path = storage.resolve_path(video.storage_path)
-        return (
-            path.is_file()
-            and path.stat().st_size == video.size_bytes
-            and video.size_bytes > 0
-            and video.mime_type in PLAYABLE_MIME_TYPES
-            and video.duration_seconds.is_finite()
-            and video.duration_seconds > 0
-        )
-    except (OSError, ValueError):
-        return False
+    """콘텐츠 ORM 자산을 영상 담당 검사에 전달한다."""
+    return video is not None and availability.is_video_available(
+        video.storage_path,
+        size_bytes=video.size_bytes,
+        mime_type=video.mime_type,
+        duration_seconds=video.duration_seconds,
+        storage=storage,
+    )
 
 
 def _missing(item: repository.Presentation, storage: LocalVideoStorage | None) -> list[str]:

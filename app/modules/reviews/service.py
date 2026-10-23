@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.api.schemas import Page
 from app.core.exceptions import ApiError
-from app.modules.attempts.service import media_available
+from app.modules.videos.availability import is_video_row_available
 from app.modules.users.service import require_learner
 from app.modules.users.settings_service import current_epoch
 from app.modules.contents.schemas import ContentSummary
@@ -143,7 +143,7 @@ def get_candidate(
         request.retry_question_version_ids,
     ):
         # 이용 불가 영상을 건너뛰어 ATM-01에서 바로 사용할 수 있는 후보를 고른다.
-        if media_available(row["storage_path"]):
+        if is_video_row_available(row):
             version = get_version(session, row["quiz_id"], row["quiz_version_id"])
             return ReviewCandidate(
                 candidate=LearnerQuestion.model_validate(version.model_dump()),
