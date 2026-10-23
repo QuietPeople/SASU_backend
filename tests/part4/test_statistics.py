@@ -670,3 +670,20 @@ def test_media_availability_agrees_across_parts(client, database, records, damag
         ).scalar_one()
         == 1
     )
+
+
+def test_content_summary_agrees_in_content_curriculum_and_wrong_answers(client, database, records):
+    r = records
+    uid, cid = r["user1"], r["content"]
+    learner = {**headers(r, "user1"), "X-Record-Generation": "0"}
+    answer(database, r, "VIDEO_END", "WRONG")
+    assert client.put(f"/api/users/{uid}/contents/{cid}/like", headers=learner).status_code == 200
+    assert client.put(f"/api/users/{uid}/contents/{cid}/saved", headers=learner).status_code == 200
+    detail = client.get(f"/api/contents/{cid}", headers=learner)
+    assert detail.status_code == 200, detail.text
+    course = client.get(f"/api/curriculums/{r['curriculum']}", headers=learner)
+    assert course.status_code == 200, course.text
+    wrongs = client.get(f"/api/users/{uid}/reviews/wrong-answers", headers=learner)
+    assert wrongs.status_code == 200, wrongs.text
+    assert detail.json()["content"] == course.json()["steps"][0]["content"]
+    assert detail.json()["content"] == wrongs.json()["items"][0]["content"]

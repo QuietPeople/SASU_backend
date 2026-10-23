@@ -4,11 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.api.schemas import Page
 from app.core.exceptions import ApiError
-from app.modules.videos.availability import is_video_row_available
-from app.modules.users.service import require_learner
-from app.modules.users.settings_service import current_epoch
-from app.modules.contents.schemas import ContentSummary
-from app.modules.contents.urls import build_video_url
+from app.modules.contents.presentation import build_summary
 from app.modules.questions.schemas import LearnerQuestion
 from app.modules.questions.service import get_version
 from app.modules.reviews import repository
@@ -21,6 +17,9 @@ from app.modules.reviews.schemas import (
     WrongAnswerItem,
     WrongAnswerQuery,
 )
+from app.modules.users.service import require_learner
+from app.modules.users.settings_service import current_epoch
+from app.modules.videos.availability import is_video_row_available
 
 
 def read_epoch(session: Session, actor_id: int, user_id: int) -> int:
@@ -54,7 +53,6 @@ def get_wrong_answers(
     rows, total = repository.list_wrong_answers(session, user_id, epoch, status, query)
     items = []
     for row in rows:
-        revision = str(row["video_asset_id"])
         items.append(
             WrongAnswerItem(
                 question=LearnerQuestion(
@@ -67,21 +65,9 @@ def get_wrong_answers(
                     question_text=row["question_text"],
                     options=row["options"],
                 ),
-                content=ContentSummary(
-                    content_id=row["content_id"],
-                    title=row["content_title"],
-                    category={"category_id": row["category_id"], "name": row["category_name"]},
-                    tags=row["tags"],
-                    video_duration=row["duration_seconds"],
-                    video_url=build_video_url(row["content_id"], revision),
-                    media_revision=revision,
-                    view_count=row["view_count"],
-                    like_count=row["like_count"],
-                    liked=row["liked"],
-                    saved=row["saved"],
-                    watch_completed=row["watch_completed"],
-                    has_quiz=True,
-                    status="PUBLISHED",
+                content=build_summary(
+                    {**row, "title": row["content_title"], "has_quiz": True, "status": "PUBLISHED"},
+                    actor_id,
                 ),
                 status=query.status,
                 wrong_count=row["wrong_count"],
