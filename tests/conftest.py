@@ -19,6 +19,7 @@ def isolate_settings(monkeypatch, tmp_path):
         "POSTGRES_USER",
         "POSTGRES_PASSWORD",
         "LOG_LEVEL",
+        "CORS_ORIGINS",
         "DB_ECHO",
         "DB_CONNECT_TIMEOUT",
         "VIDEO_STORAGE_ROOT",

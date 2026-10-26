@@ -15,6 +15,7 @@ services:
       DB_USER: ${POSTGRES_USER:-sasu}
       DB_PASSWORD: ${POSTGRES_PASSWORD:?Copy .env.example to .env and set POSTGRES_PASSWORD}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      CORS_ORIGINS: '${CORS_ORIGINS:-["http://127.0.0.1:5173","http://localhost:5173"]}'
       DB_ECHO: ${DB_ECHO:-false}
       DB_CONNECT_TIMEOUT: ${DB_CONNECT_TIMEOUT:-5}
       VIDEO_STORAGE_ROOT: /app/storage/videos

@@ -10,6 +10,25 @@ FastAPI·Swagger UI·환경변수 검증·동기 DB 세션·Alembic과 Docker Co
 
 카테고리 목록·추가·이름 수정(CAT-01~03), 태그 검색·등록(TAG-01~02), 반응·시청 통계(STA-04), 테스트 기록 초기화(TST-01)의 API 7개를 구현했습니다. `categories/`·`tags/`·`admin/` 모듈에서 기존 통합 DB를 사용합니다. 역할 확인·이름 중복 처리·오류 형식·세대 변환·PostgreSQL 통합 테스트 방법은 [관리자 API 문서](app/modules/admin/README.md)를 참고합니다.
 
+## 프론트 직접 연결과 CORS
+
+기본 허용 origin은 `http://127.0.0.1:5173`과 `http://localhost:5173`입니다.
+다른 주소를 쓰면 백엔드 `.env`에 `CORS_ORIGINS=["https://실제-프론트-주소"]`처럼
+경로 없는 origin의 JSON 배열을 지정하고 `docker compose up -d backend`로 적용합니다.
+개발 DB나 볼륨을 삭제할 필요는 없습니다. 쿠키 인증은 사용하지 않습니다.
+
+`GET`, `POST`, `PUT`, `PATCH`, `DELETE`와 `X-Actor-Id`, `X-Record-Generation`,
+`Content-Type`, 영상의 `Range` 헤더를 허용합니다. Vite의 `/api` 프록시는 같은 origin
+요청이므로 프록시 성공만으로 CORS를 확인할 수 없습니다. Git Bash에서 직접 preflight를
+확인하려면 다음 요청의 `Access-Control-Allow-Origin`과 허용 메서드·헤더를 확인합니다.
+
+```bash
+curl -i -X OPTIONS 'http://127.0.0.1:8000/api/users/1/feed' \
+  -H 'Origin: http://127.0.0.1:5173' \
+  -H 'Access-Control-Request-Method: GET' \
+  -H 'Access-Control-Request-Headers: X-Actor-Id,X-Record-Generation,Content-Type'
+```
+
 ## 디렉터리 구조
 
 Python 패키지 표시용 `__init__.py`는 트리에서 생략했습니다.

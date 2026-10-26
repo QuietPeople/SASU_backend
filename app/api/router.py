@@ -9,6 +9,7 @@ from app.modules.contents.router import router as contents_router
 from app.modules.curricula.router import router as curricula_router
 from app.modules.dashboard.router import router as dashboard_router
 from app.modules.events.router import router as events_router
+from app.modules.feeds.router import router as feeds_router
 from app.modules.likes.router import router as likes_router
 from app.modules.questions.router import router as questions_router
 from app.modules.responses.router import router as responses_router
@@ -36,6 +37,7 @@ api_router.include_router(users_router)
 api_router.include_router(user_settings_router)
 api_router.include_router(watch_records_router)
 api_router.include_router(events_router)
+api_router.include_router(feeds_router)
 api_router.include_router(responses_router)
 api_router.include_router(dashboard_router)
 api_router.include_router(statistics_router)
