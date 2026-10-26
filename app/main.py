@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from starlette.concurrency import run_in_threadpool
 
+from app.api.cors import ConfiguredCORSMiddleware
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
@@ -51,5 +52,6 @@ app = FastAPI(
         "filter": True,
     },
 )
+app.add_middleware(ConfiguredCORSMiddleware)
 register_exception_handlers(app)
 app.include_router(api_router)

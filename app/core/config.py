@@ -3,6 +3,7 @@
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -21,6 +22,9 @@ class Settings(BaseSettings):
     )
 
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    cors_origins: list[str] = Field(
+        default_factory=lambda: ["http://127.0.0.1:5173", "http://localhost:5173"]
+    )
     db_host: str = Field(default="localhost", min_length=1)
     db_port: int = Field(
         default=5432,
@@ -44,6 +48,31 @@ class Settings(BaseSettings):
     video_max_mb: int = Field(default=200, ge=1, le=2048)
     video_min_seconds: float = Field(default=1.0, gt=0)
     video_max_seconds: float = Field(default=180.0, gt=0)
+
+    @field_validator("cors_origins")
+    @classmethod
+    def validate_cors_origins(cls, values: list[str]) -> list[str]:
+        origins = []
+        for value in values:
+            value = value.strip()
+            parsed = urlsplit(value)
+            if (
+                parsed.scheme not in {"http", "https"}
+                or not parsed.hostname
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.path
+                or parsed.query
+                or parsed.fragment
+                or "*" in value
+                or any(character.isspace() for character in value)
+            ):
+                raise ValueError("CORS_ORIGINS에는 경로 없는 http/https origin을 지정해야 합니다.")
+            # 잘못된 포트·범위도 설정 단계에서 거부한다.
+            _ = parsed.port
+            if value not in origins:
+                origins.append(value)
+        return origins
 
     @field_validator("video_storage_root")
     @classmethod
