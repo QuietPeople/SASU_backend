@@ -3,7 +3,7 @@ from math import isfinite
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from app.core.exceptions import ApiError
 from app.core.types import PositiveId, RecordGeneration
@@ -13,7 +13,9 @@ class WatchVisitBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     visit_id: UUID
-    media_revision: Annotated[str, Field(min_length=1, max_length=128)]
+    media_revision: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)
+    ]
     actual_played_seconds: Annotated[float, Field(strict=True)]
     watched_segments: list[list[Annotated[float, Field(strict=True)]]]
     context: Literal["FEED", "SEARCH", "CURRICULUM", "LIBRARY", "REVIEW"]
