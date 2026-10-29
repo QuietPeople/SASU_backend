@@ -113,11 +113,10 @@ DECLARE
       "size_bytes": 86642,
       "duration_seconds": 20.0,
       "category": "문서·OA",
-      "title": "[목업] 엑셀 VLOOKUP 3분 정리",
+      "title": "엑셀 VLOOKUP 3분 정리",
       "tags": [
         "엑셀",
-        "함수",
-        "목업"
+        "함수"
       ],
       "core_content": "VLOOKUP은 기준 값으로 다른 표의 값을 찾아옵니다. 찾을 값, 범위, 열 번호, 일치 옵션 순서로 입력합니다.",
       "source": "SASU 자체 제작(목업)",
@@ -132,11 +131,10 @@ DECLARE
       "size_bytes": 88071,
       "duration_seconds": 20.0,
       "category": "문서·OA",
-      "title": "[목업] 피벗 테이블로 월별 매출 요약하기",
+      "title": "피벗 테이블로 월별 매출 요약하기",
       "tags": [
         "엑셀",
-        "피벗테이블",
-        "목업"
+        "피벗테이블"
       ],
       "core_content": "피벗 테이블은 원본 데이터를 원하는 기준으로 요약합니다. 행에 월, 값에 매출을 넣으면 월별 합계가 나옵니다.",
       "source": "SASU 자체 제작(목업)",
@@ -151,11 +149,10 @@ DECLARE
       "size_bytes": 92210,
       "duration_seconds": 20.0,
       "category": "문서·OA",
-      "title": "[목업] 파워포인트 슬라이드 정렬 단축키",
+      "title": "파워포인트 슬라이드 정렬 단축키",
       "tags": [
         "파워포인트",
-        "단축키",
-        "목업"
+        "단축키"
       ],
       "core_content": "정렬 기능을 쓰면 도형을 일정한 간격으로 맞출 수 있습니다. 여러 개를 선택한 뒤 맞춤 메뉴를 사용합니다.",
       "source": "SASU 자체 제작(목업)",
@@ -170,11 +167,10 @@ DECLARE
       "size_bytes": 90069,
       "duration_seconds": 20.0,
       "category": "문서·OA",
-      "title": "[목업] 워드 스타일로 목차 자동 만들기",
+      "title": "워드 스타일로 목차 자동 만들기",
       "tags": [
         "워드",
-        "문서작성",
-        "목업"
+        "문서작성"
       ],
       "core_content": "제목 스타일을 지정하면 목차를 자동으로 만들 수 있습니다. 내용이 바뀌면 목차 업데이트만 누르면 됩니다.",
       "source": "SASU 자체 제작(목업)",
@@ -189,11 +185,10 @@ DECLARE
       "size_bytes": 89010,
       "duration_seconds": 20.0,
       "category": "커뮤니케이션",
-      "title": "[목업] 업무 메일 첫 문장 쓰는 법",
+      "title": "업무 메일 첫 문장 쓰는 법",
       "tags": [
         "이메일",
-        "글쓰기",
-        "목업"
+        "글쓰기"
       ],
       "core_content": "업무 메일은 첫 문장에 목적을 밝힙니다. 인사 뒤에 요청이나 공유 내용을 한 줄로 먼저 씁니다.",
       "source": "SASU 자체 제작(목업)",
@@ -208,11 +203,10 @@ DECLARE
       "size_bytes": 87013,
       "duration_seconds": 20.0,
       "category": "커뮤니케이션",
-      "title": "[목업] 보고는 결론부터 두괄식 말하기",
+      "title": "보고는 결론부터 두괄식 말하기",
       "tags": [
         "보고",
-        "말하기",
-        "목업"
+        "말하기"
       ],
       "core_content": "보고는 결론을 먼저 말하고 근거를 이어 붙입니다. 듣는 사람이 판단할 내용을 앞에 둡니다.",
       "source": "SASU 자체 제작(목업)",
@@ -227,11 +221,10 @@ DECLARE
       "size_bytes": 90181,
       "duration_seconds": 20.0,
       "category": "커뮤니케이션",
-      "title": "[목업] 회의록 5줄로 정리하는 템플릿",
+      "title": "회의록 5줄로 정리하는 템플릿",
       "tags": [
         "회의록",
-        "문서작성",
-        "목업"
+        "문서작성"
       ],
       "core_content": "회의록은 일시, 참석자, 결정 사항, 할 일, 담당자 다섯 줄로 정리합니다. 결정과 할 일을 구분해 적습니다.",
       "source": "SASU 자체 제작(목업)",
@@ -246,11 +239,10 @@ DECLARE
       "size_bytes": 94492,
       "duration_seconds": 20.0,
       "category": "데이터",
-      "title": "[목업] 평균과 중앙값 언제 무엇을 쓸까",
+      "title": "평균과 중앙값 언제 무엇을 쓸까",
       "tags": [
         "통계",
-        "데이터",
-        "목업"
+        "데이터"
       ],
       "core_content": "평균은 극단값에 영향을 크게 받습니다. 값이 한쪽으로 치우치면 중앙값이 대표값으로 더 적합합니다.",
       "source": "SASU 자체 제작(목업)",
@@ -265,11 +257,10 @@ DECLARE
       "size_bytes": 89759,
       "duration_seconds": 20.0,
       "category": "데이터",
-      "title": "[목업] SQL SELECT 기본 문법 한눈에",
+      "title": "SQL SELECT 기본 문법 한눈에",
       "tags": [
         "SQL",
-        "데이터베이스",
-        "목업"
+        "데이터베이스"
       ],
       "core_content": "SELECT는 조회할 열을, FROM은 테이블을 지정합니다. WHERE로 조건을 걸어 필요한 행만 가져옵니다.",
       "source": "SASU 자체 제작(목업)",
@@ -284,11 +275,10 @@ DECLARE
       "size_bytes": 87039,
       "duration_seconds": 20.0,
       "category": "데이터",
-      "title": "[목업] 막대 vs 선 그래프 고르는 기준",
+      "title": "막대 vs 선 그래프 고르는 기준",
       "tags": [
         "시각화",
-        "그래프",
-        "목업"
+        "그래프"
       ],
       "core_content": "항목끼리 비교할 때는 막대 그래프를 씁니다. 시간에 따른 변화를 볼 때는 선 그래프가 적합합니다.",
       "source": "SASU 자체 제작(목업)",
@@ -303,11 +293,10 @@ DECLARE
       "size_bytes": 86017,
       "duration_seconds": 20.0,
       "category": "IT",
-      "title": "[목업] R&R이 뭐예요? 역할과 책임 정리",
+      "title": "R&R이 뭐예요? 역할과 책임 정리",
       "tags": [
         "용어",
-        "협업",
-        "목업"
+        "협업"
       ],
       "core_content": "R&R은 역할과 책임을 뜻합니다. 누가 무엇을 맡고 어디까지 책임지는지 정해 업무 혼선을 줄입니다.",
       "source": "SASU 자체 제작(목업)",
@@ -322,11 +311,10 @@ DECLARE
       "size_bytes": 81088,
       "duration_seconds": 20.0,
       "category": "IT",
-      "title": "[목업] Git 커밋 메시지 잘 쓰는 법",
+      "title": "Git 커밋 메시지 잘 쓰는 법",
       "tags": [
         "Git",
-        "개발",
-        "목업"
+        "개발"
       ],
       "core_content": "커밋 메시지는 유형과 변경 내용을 한 줄로 씁니다. 무엇을 왜 바꿨는지 알 수 있게 작성합니다.",
       "source": "SASU 자체 제작(목업)",
@@ -341,11 +329,10 @@ DECLARE
       "size_bytes": 88292,
       "duration_seconds": 20.0,
       "category": "비즈니스 매너",
-      "title": "[목업] 명함 주고받는 순서와 예절",
+      "title": "명함 주고받는 순서와 예절",
       "tags": [
         "매너",
-        "첫인상",
-        "목업"
+        "첫인상"
       ],
       "core_content": "명함은 아랫사람이 먼저 건넵니다. 받은 명함은 바로 넣지 않고 잠시 확인합니다.",
       "source": "SASU 자체 제작(목업)",
@@ -360,11 +347,10 @@ DECLARE
       "size_bytes": 87958,
       "duration_seconds": 20.0,
       "category": "업무 생산성",
-      "title": "[목업] 뽀모도로 기법 25분 집중하기",
+      "title": "뽀모도로 기법 25분 집중하기",
       "tags": [
         "시간관리",
-        "집중",
-        "목업"
+        "집중"
       ],
       "core_content": "25분 집중하고 5분 쉬는 것을 한 단위로 반복합니다. 네 번 반복한 뒤에는 길게 쉽니다.",
       "source": "SASU 자체 제작(목업)",
@@ -379,11 +365,10 @@ DECLARE
       "size_bytes": 91199,
       "duration_seconds": 20.0,
       "category": "업무 생산성",
-      "title": "[목업] 할 일 우선순위 아이젠하워 매트릭스",
+      "title": "할 일 우선순위 아이젠하워 매트릭스",
       "tags": [
         "시간관리",
-        "우선순위",
-        "목업"
+        "우선순위"
       ],
       "core_content": "할 일을 긴급성과 중요도로 나눠 네 칸에 배치합니다. 중요하지만 급하지 않은 일에 시간을 먼저 확보합니다.",
       "source": "SASU 자체 제작(목업)",
@@ -398,11 +383,10 @@ DECLARE
       "size_bytes": 10676107,
       "duration_seconds": 21.525,
       "category": "문서·OA",
-      "title": "[목업] 엑셀 조건부 서식으로 마감일 강조하기",
+      "title": "엑셀 조건부 서식으로 마감일 강조하기",
       "tags": [
         "엑셀",
-        "서식",
-        "목업"
+        "서식"
       ],
       "core_content": "조건부 서식은 조건에 맞는 셀에 자동으로 색을 칠합니다. 마감일이 지난 행을 한눈에 찾을 수 있습니다.",
       "source": "SASU 데모 영상팀 01 (가상 출처)",
@@ -417,11 +401,10 @@ DECLARE
       "size_bytes": 21865515,
       "duration_seconds": 20.8,
       "category": "커뮤니케이션",
-      "title": "[목업] 1분 자기소개, 이렇게 시작하세요",
+      "title": "1분 자기소개, 이렇게 시작하세요",
       "tags": [
         "자기소개",
-        "말하기",
-        "목업"
+        "말하기"
       ],
       "core_content": "자기소개는 이름, 하는 일, 강점 순서로 짧게 말합니다. 마지막에 함께 일하고 싶은 이유를 덧붙입니다.",
       "source": "SASU 데모 영상팀 02 (가상 출처)",
@@ -436,11 +419,10 @@ DECLARE
       "size_bytes": 62796707,
       "duration_seconds": 34.282,
       "category": "커뮤니케이션",
-      "title": "[목업] 거절할 때 쓰는 부드러운 말투 3가지",
+      "title": "거절할 때 쓰는 부드러운 말투 3가지",
       "tags": [
         "거절",
-        "대화",
-        "목업"
+        "대화"
       ],
       "core_content": "거절할 때는 이유와 대안을 함께 말합니다. 감사 표현으로 시작하면 관계를 해치지 않습니다.",
       "source": "SASU 데모 영상팀 03 (가상 출처)",
@@ -455,11 +437,10 @@ DECLARE
       "size_bytes": 2025895,
       "duration_seconds": 10.0,
       "category": "업무 생산성",
-      "title": "[목업] 화상회의 전 체크리스트 5가지",
+      "title": "화상회의 전 체크리스트 5가지",
       "tags": [
         "화상회의",
-        "준비",
-        "목업"
+        "준비"
       ],
       "core_content": "카메라, 마이크, 조명, 배경, 공유할 화면을 미리 확인합니다. 시작 5분 전에 접속해 두면 지연을 줄일 수 있습니다.",
       "source": "SASU 데모 영상팀 04 (가상 출처)",
@@ -474,11 +455,10 @@ DECLARE
       "size_bytes": 19559912,
       "duration_seconds": 17.04,
       "category": "업무 생산성",
-      "title": "[목업] 업무 메모, 노션으로 정리하는 법",
+      "title": "업무 메모, 노션으로 정리하는 법",
       "tags": [
         "노션",
-        "메모",
-        "목업"
+        "메모"
       ],
       "core_content": "메모는 날짜와 주제별 페이지로 나눠 정리합니다. 태그를 달면 나중에 관련 메모를 쉽게 찾습니다.",
       "source": "SASU 데모 영상팀 05 (가상 출처)",
@@ -493,11 +473,10 @@ DECLARE
       "size_bytes": 14510089,
       "duration_seconds": 10.027,
       "category": "비즈니스 기초",
-      "title": "[목업] KPI와 OKR 차이 한 번에 이해하기",
+      "title": "KPI와 OKR 차이 한 번에 이해하기",
       "tags": [
         "KPI",
-        "OKR",
-        "목업"
+        "OKR"
       ],
       "core_content": "KPI는 성과를 꾸준히 측정하는 지표입니다. OKR은 도전적인 목표와 그 달성 여부를 확인할 핵심 결과를 함께 정합니다.",
       "source": "SASU 데모 영상팀 06 (가상 출처)",
@@ -512,11 +491,10 @@ DECLARE
       "size_bytes": 19404320,
       "duration_seconds": 12.32,
       "category": "데이터",
-      "title": "[목업] 보고서 그래프 색상 고르는 기준",
+      "title": "보고서 그래프 색상 고르는 기준",
       "tags": [
         "시각화",
-        "디자인",
-        "목업"
+        "디자인"
       ],
       "core_content": "강조할 항목 하나에만 진한 색을 씁니다. 나머지는 회색 계열로 두면 핵심이 잘 드러납니다.",
       "source": "SASU 데모 영상팀 07 (가상 출처)",
@@ -531,11 +509,10 @@ DECLARE
       "size_bytes": 15653919,
       "duration_seconds": 10.73,
       "category": "IT",
-      "title": "[목업] 비밀번호 관리, 이것만 지키세요",
+      "title": "비밀번호 관리, 이것만 지키세요",
       "tags": [
         "보안",
-        "비밀번호",
-        "목업"
+        "비밀번호"
       ],
       "core_content": "사이트마다 다른 비밀번호를 사용합니다. 비밀번호 관리자와 2단계 인증을 함께 쓰면 안전합니다.",
       "source": "SASU 데모 영상팀 08 (가상 출처)",
@@ -550,11 +527,10 @@ DECLARE
       "size_bytes": 22565861,
       "duration_seconds": 10.01,
       "category": "비즈니스 매너",
-      "title": "[목업] 첫 출근 날 꼭 챙길 것들",
+      "title": "첫 출근 날 꼭 챙길 것들",
       "tags": [
         "첫출근",
-        "매너",
-        "목업"
+        "매너"
       ],
       "core_content": "신분증, 서류, 필기구를 미리 챙깁니다. 출근 시간보다 10분 일찍 도착해 인사를 준비합니다.",
       "source": "SASU 데모 영상팀 09 (가상 출처)",
@@ -569,11 +545,10 @@ DECLARE
       "size_bytes": 23803989,
       "duration_seconds": 16.417,
       "category": "업무 생산성",
-      "title": "[목업] 집중력 높이는 책상 정리 습관",
+      "title": "집중력 높이는 책상 정리 습관",
       "tags": [
         "정리",
-        "집중",
-        "목업"
+        "집중"
       ],
       "core_content": "책상에는 지금 하는 일에 필요한 물건만 둡니다. 퇴근 전에 정리하면 다음 날 바로 시작할 수 있습니다.",
       "source": "SASU 데모 영상팀 10 (가상 출처)",
@@ -1242,7 +1217,7 @@ DECLARE
   ],
   "curricula": [
     {
-      "title": "[데모] 엑셀 실무 첫걸음",
+      "title": "엑셀 실무 첫걸음",
       "description": "조회 함수, 피벗 테이블, 조건부 서식을 순서대로 익힙니다.",
       "content_numbers": [
         1,
@@ -1251,7 +1226,7 @@ DECLARE
       ]
     },
     {
-      "title": "[데모] 문서와 보고서 정리",
+      "title": "문서와 보고서 정리",
       "description": "슬라이드·문서·회의록·메모·그래프를 깔끔하게 정리하는 과정입니다.",
       "content_numbers": [
         3,
@@ -1262,7 +1237,7 @@ DECLARE
       ]
     },
     {
-      "title": "[데모] 업무 소통 기본기",
+      "title": "업무 소통 기본기",
       "description": "메일 작성부터 보고, 자기소개와 거절 표현까지 연습합니다.",
       "content_numbers": [
         5,
@@ -1272,7 +1247,7 @@ DECLARE
       ]
     },
     {
-      "title": "[데모] 데이터와 IT 기초",
+      "title": "데이터와 IT 기초",
       "description": "데이터 해석, SQL, 그래프와 개발·보안의 기본 개념을 확인합니다.",
       "content_numbers": [
         8,
@@ -1283,7 +1258,7 @@ DECLARE
       ]
     },
     {
-      "title": "[데모] 신입 온보딩 가이드",
+      "title": "신입 온보딩 가이드",
       "description": "역할과 책임, 비즈니스 매너, 목표 관리와 첫 출근을 준비합니다.",
       "content_numbers": [
         11,
@@ -1293,7 +1268,7 @@ DECLARE
       ]
     },
     {
-      "title": "[데모] 하루 업무 생산성",
+      "title": "하루 업무 생산성",
       "description": "집중 시간, 우선순위, 화상회의 준비와 업무 환경을 점검합니다.",
       "content_numbers": [
         14,
