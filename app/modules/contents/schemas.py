@@ -1,13 +1,23 @@
 from datetime import date
+from re import fullmatch
 from typing import Annotated, Literal, Self
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StrictBool, model_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    field_validator,
+    model_validator,
+)
 
 from app.api.schemas import Page, PageQuery, ViewQuery
 from app.core.types import PositiveId as ResourceId
 from app.modules.categories.schemas import CategoryRead
 from app.modules.tags.schemas import TagRead
 
+StrictResourceId = Annotated[ResourceId, Field(strict=True)]
 NonBlankText = Annotated[str, Field(min_length=1)]
 Title = Annotated[str, Field(min_length=1, max_length=200)]
 ContentStatus = Literal["DRAFT", "PUBLISHED"]
@@ -48,15 +58,27 @@ class VideoQuery(InputModel):
 
 class ContentFields(InputModel):
     title: Title | None = None
-    category_id: ResourceId | None = None
+    category_id: StrictResourceId | None = None
     core_content: NonBlankText | None = None
     source: NonBlankText | None = None
     reviewed_on: date | None = None
     caution_text: NonBlankText | None = None
 
+    @field_validator("reviewed_on", mode="before")
+    @classmethod
+    def validate_reviewed_on(cls, value):
+        if value is None or type(value) is date:
+            return value
+        if (
+            not isinstance(value, str)
+            or fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value.strip()) is None
+        ):
+            raise ValueError("검토일은 YYYY-MM-DD 형식이어야 합니다.")
+        return date.fromisoformat(value.strip())
+
 
 class ContentCreate(ContentFields):
-    tag_ids: list[ResourceId] = Field(default_factory=list)
+    tag_ids: list[StrictResourceId] = Field(default_factory=list)
     caution_enabled: StrictBool = False
 
     @model_validator(mode="after")
@@ -69,7 +91,7 @@ class ContentCreate(ContentFields):
 class ContentUpdate(ContentFields):
     """전달 필드만 model_dump(exclude_unset=True)로 수정 서비스에 넘긴다."""
 
-    tag_ids: list[ResourceId] = Field(
+    tag_ids: list[StrictResourceId] = Field(
         default_factory=list, description="생략 시 유지. 전달하면 전체 교체, []는 모두 해제."
     )
     caution_enabled: StrictBool = Field(
