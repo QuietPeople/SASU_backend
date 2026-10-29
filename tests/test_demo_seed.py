@@ -2,6 +2,7 @@
 import json
 import os
 from contextlib import contextmanager
+from uuid import uuid4
 
 import pytest
 from alembic.config import Config
@@ -69,6 +70,17 @@ def database():
 def apply_seed(connection, sql):
     connection.exec_driver_sql(sql, execution_options={"no_parameters": True})
     connection.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
+
+
+@pytest.fixture
+def seed_engine(database):
+    class TransactionEngine:
+        @contextmanager
+        def begin(self):
+            with database.begin_nested():
+                yield database
+
+    return TransactionEngine()
 
 
 def test_schema_migration_does_not_insert_demo_data(database):
@@ -372,24 +384,90 @@ def test_partial_dataset_is_rejected_without_repair_or_overwrite(database, seed_
     assert snapshot(database) == before
 
 
-def test_original_video_bundle_is_copied_and_connected_atomically(database, seed_sql, tmp_path):
+def test_original_video_bundle_is_copied_and_connected_atomically(
+    database, seed_sql, tmp_path, seed_engine
+):
     bundle = PROJECT_ROOT / "demo_seeds"
     if not list((bundle / "videos").glob("*.mp4")):
         pytest.skip("원본 영상 묶음을 준비한 경우에만 복사·DB 연결을 검증")
 
-    class TransactionEngine:
-        @contextmanager
-        def begin(self):
-            with database.begin_nested():
-                yield database
-
     server = tmp_path / "server-videos"
-    engine = TransactionEngine()
-    assert demo_injection.apply_demo_seed(engine, bundle, server) == 25
+    assert demo_injection.apply_demo_seed(seed_engine, bundle, server) == 25
     database.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
     assert database.scalar(text("SELECT count(*) FROM sasu.contents")) == 25
-    assert demo_injection.apply_demo_seed(engine, bundle, server) == 0
+    assert demo_injection.apply_demo_seed(seed_engine, bundle, server) == 0
     for item in json.loads(seed_sql.split("$sasu_demo_data$")[1])["contents"]:
         path = server / item["storage_path"]
         assert path.stat().st_size == item["size_bytes"]
         assert demo_injection.file_digest(path) == item["sha256"]
+
+
+def stored_video_files(database, server):
+    rows = database.execute(
+        text("SELECT storage_path, size_bytes FROM sasu.video_assets ORDER BY storage_path")
+    ).mappings().all()
+    for row in rows:
+        path = server / row["storage_path"]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("wb") as stream:
+            stream.truncate(row["size_bytes"])
+    return rows
+
+
+@pytest.mark.parametrize("state", ["missing", "wrong_size"])
+def test_invalid_current_video_rolls_back_learning_enrichment(
+    database, seed_sql, tmp_path, seed_engine, state
+):
+    apply_seed(database, content_only_sql(seed_sql))
+    server = tmp_path / "server"
+    rows = stored_video_files(database, server)
+    broken = server / rows[0]["storage_path"]
+    broken.unlink()
+    if state == "wrong_size":
+        broken.write_bytes(b"truncated")
+    before = snapshot(database)
+    with pytest.raises(RuntimeError, match="서버 영상 확인 실패"):
+        demo_injection.apply_demo_seed(seed_engine, PROJECT_ROOT / "demo_seeds", server)
+    assert snapshot(database) == before
+    assert database.scalar(text("SELECT count(*) FROM sasu.quizzes")) == 0
+    if state == "missing":
+        assert not broken.exists()
+    else:
+        assert broken.read_bytes() == b"truncated"
+
+
+def test_replaced_video_uses_current_database_metadata_and_ignores_old_asset(
+    database, seed_sql, tmp_path, seed_engine
+):
+    apply_seed(database, seed_sql)
+    server = tmp_path / "server"
+    stored_video_files(database, server)
+    old = database.execute(
+        text(
+            "SELECT c.content_id, a.* FROM sasu.contents c "
+            "JOIN sasu.video_assets a USING(video_asset_id) ORDER BY c.content_id LIMIT 1"
+        )
+    ).mappings().one()
+    replacement_id = uuid4()
+    new_path = server / "replacement.mp4"
+    new_path.write_bytes(b"new media")
+    database.execute(
+        text(
+            "INSERT INTO sasu.video_assets "
+            "(video_asset_id, storage_path, original_name, mime_type, "
+            "size_bytes, duration_seconds) "
+            "VALUES (:id, 'replacement.mp4', 'new.mp4', 'video/mp4', 9, 5)"
+        ),
+        {"id": replacement_id},
+    )
+    database.execute(
+        text("UPDATE sasu.contents SET video_asset_id=:asset WHERE content_id=:content"),
+        {"asset": replacement_id, "content": old["content_id"]},
+    )
+    old_path = server / old["storage_path"]
+    old_path.unlink()
+    before = snapshot(database)
+    assert demo_injection.apply_demo_seed(seed_engine, PROJECT_ROOT / "demo_seeds", server) == 0
+    assert snapshot(database) == before
+    assert new_path.read_bytes() == b"new media"
+    assert not old_path.exists()

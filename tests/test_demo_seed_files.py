@@ -42,9 +42,10 @@ def bundle(tmp_path):
 
 
 class FakeEngine:
-    def __init__(self, *, sql_error=None, commit_error=None):
+    def __init__(self, *, sql_error=None, commit_error=None, stored_videos=()):
         self.connection = Mock()
         self.connection.scalar.return_value = 0
+        self.connection.execute.return_value.mappings.return_value = stored_videos
         self.connection.exec_driver_sql.side_effect = sql_error
         self.commit_error = commit_error
 
@@ -108,8 +109,60 @@ def test_already_applied_seed_does_not_require_bundle_or_replace_server_files(
 ):
     for path in (bundle / "videos").glob("*.mp4"):
         path.unlink()
-    engine = FakeEngine()
+    server = tmp_path / "server"
+    server.mkdir()
+    replacement = server / "replacement.mp4"
+    replacement.write_bytes(b"edited video")
+    engine = FakeEngine(stored_videos=[
+        {"content_id": 12, "storage_path": "replacement.mp4", "size_bytes": 12},
+    ])
     engine.connection.scalar.return_value = 2
-    assert seed_module.apply_demo_seed(engine, bundle, tmp_path / "server") == 0
+    assert seed_module.apply_demo_seed(engine, bundle, server) == 0
     engine.connection.exec_driver_sql.assert_called_once()
-    assert not (tmp_path / "server").exists()
+    assert replacement.read_bytes() == b"edited video"
+    assert list(server.iterdir()) == [replacement]
+
+
+@pytest.mark.parametrize("state", ["missing", "directory", "wrong_size", "outside_root"])
+def test_existing_database_does_not_hide_invalid_server_files(seed_module, bundle, tmp_path, state):
+    server = tmp_path / "server"
+    server.mkdir()
+    relative = "current.mp4"
+    if state == "directory":
+        (server / relative).mkdir()
+    elif state == "wrong_size":
+        (server / relative).write_bytes(b"short")
+    elif state == "outside_root":
+        relative = "../outside.mp4"
+        (tmp_path / "outside.mp4").write_bytes(b"edited video")
+    engine = FakeEngine(stored_videos=[
+        {"content_id": 12, "storage_path": relative, "size_bytes": 12},
+    ])
+    engine.connection.scalar.return_value = 2
+    with pytest.raises(RuntimeError, match="서버 영상 확인 실패.*") as error:
+        seed_module.apply_demo_seed(engine, bundle, server)
+    assert f"콘텐츠 12 / {relative}" in str(error.value)
+    if state == "wrong_size":
+        assert (server / relative).read_bytes() == b"short"
+    assert not (server / "demo").exists()
+
+
+def test_missing_server_video_exits_without_success_message(
+    seed_module, bundle, tmp_path, monkeypatch, capsys
+):
+    engine = FakeEngine(stored_videos=[
+        {"content_id": 12, "storage_path": "missing.mp4", "size_bytes": 12},
+    ])
+    engine.connection.scalar.return_value = 2
+    monkeypatch.setattr(seed_module, "BUNDLE_ROOT", bundle)
+    monkeypatch.setattr(seed_module, "get_engine", lambda: engine)
+    monkeypatch.setattr(
+        seed_module, "get_settings", lambda: Mock(video_storage_root=tmp_path / "server")
+    )
+    close = Mock()
+    monkeypatch.setattr(seed_module, "close_database", close)
+    with pytest.raises(SystemExit, match="데모 seed 처리 중단") as error:
+        seed_module.main()
+    assert "missing.mp4" in str(error.value)
+    assert "데모 seed 처리 완료" not in capsys.readouterr().out
+    close.assert_called_once()
