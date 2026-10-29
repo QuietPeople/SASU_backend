@@ -5,28 +5,16 @@ from app.core.exceptions import ApiError
 from app.integrations.storage import LocalVideoStorage
 from app.modules.contents.service import build_content_summary, is_video_available
 from app.modules.feeds import repository
-from app.modules.feeds.contracts import FeedCandidate, FeedRanker, FeedRankingInput, RankedFeedItem
+from app.modules.feeds.contracts import FeedCandidate, FeedRanker, FeedRankingInput
+from app.modules.feeds.ranking import rank_feed
 from app.modules.feeds.schemas import Feed, FeedItem
 from app.modules.users.service import require_learner
 from app.modules.users.settings_repository import get_feed_position
 from app.modules.users.settings_service import current_epoch
 
 
-def _latest_first_placeholder(context: FeedRankingInput) -> tuple[RankedFeedItem, ...]:
-    """임시 연결: 전체 후보를 입력 순서(최신순)대로 반환하며 이유는 LATEST.
-
-    교체 담당: 파트 2. 정식 추천 함수 준비·규격 합의 후 get_feed_ranker의
-    반환 함수를 feeds/ranking.py의 함수로 교체한다. 관심·태그·미시청 우선순위와
-    재개 선두 배치는 여기서 구현하지 않는다. 정식 추천 완료 상태가 아니다.
-    """
-    return tuple(
-        RankedFeedItem(item.content_id, "LATEST", "최근 공개된 영상") for item in context.candidates
-    )
-
-
 def get_feed_ranker() -> FeedRanker:
-    # TODO(파트 2 연결): 합의한 순수 추천 함수로 이 반환값을 교체한다.
-    return _latest_first_placeholder
+    return rank_feed
 
 
 def get_feed(session: Session, actor_id: int, user_id: int, ranker: FeedRanker) -> Feed:
