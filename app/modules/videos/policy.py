@@ -5,12 +5,9 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class VideoPolicy:
-    # 1080p H.264 60초 ≈ 40~80MB. 여유를 둔 상한 [제안]
     max_bytes: int = 200 * 1024 * 1024
-    # 숏폼 기준. 15/40초 구분 없이 길이만 제한(기능 정의서 7.2 답변 6번) [제안]
     min_duration_sec: float = 1.0
     max_duration_sec: float = 180.0
-    # 긴 변 기준 해상도 상한. 4K 초과는 브라우저 부담이 커서 차단 [제안]
     max_long_edge_px: int = 2160
 
     # 브라우저(Chrome·Edge·Safari·Firefox) 공통 재생이 되는 조합만 받는다.

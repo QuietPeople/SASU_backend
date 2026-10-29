@@ -4,11 +4,17 @@ SASU의 학습자·관리자 기능을 위한 백엔드 저장소입니다.
 
 **공통 기반과 기능별 모듈을 분리하는 구조**를 사용합니다. `app/modules/` 아래에 기능별 폴더를 하나씩 추가하고, 해당 기능의 라우터·서비스·CRUD·스키마·모델을 그 안에 모읍니다.
 
-현재 `contents/`와 `users/`는 **모듈 작성 방식을 보여주는 예시**입니다. 실제 서비스의 전체 모듈 목록이나 경계를 확정한 것은 아니며, 새 기능을 개발할 때 같은 방식으로 모듈을 추가합니다.
+현재 다음 기능을 구현했습니다.
 
-FastAPI·Swagger UI·환경변수 검증·동기 DB 세션·Alembic과 Docker Compose 실행 설정을 구성했습니다. 예시 모듈의 파일은 역할을 표시한 틀이며 개별 API·업무 처리·테이블 모델은 구현하지 않았습니다. Docker 이미지 빌드·백엔드와 PostgreSQL 실행·실제 DB 연결·API 문서 응답을 검증했으며, 공통 기반 테스트 13개와 Ruff 코드 검사를 통과했습니다.
+- 콘텐츠 검색·상세·등록·수정·공개, 영상 업로드·교체·부분 재생
+- 카테고리·태그 관리, 퀴즈 등록·버전 관리, 시리즈 편성·진행률
+- 사용자 설정·학습 기록 초기화, 좋아요·저장·시청 기록
+- 개인화 피드, 퀴즈 풀이·응답, 오답 복습·플래시카드·학습 이벤트
+- 학습자 대시보드, 관리자 통계, DB·영상 저장소 상태 확인
 
-카테고리 목록·추가·이름 수정(CAT-01~03), 태그 검색·등록(TAG-01~02), 반응·시청 통계(STA-04), 테스트 기록 초기화(TST-01)의 API 7개를 구현했습니다. `categories/`·`tags/`·`admin/` 모듈에서 기존 통합 DB를 사용합니다. 역할 확인·이름 중복 처리·오류 형식·세대 변환·PostgreSQL 통합 테스트 방법은 [관리자 API 문서](app/modules/admin/README.md)를 참고합니다.
+현재 사용자 구분은 `X-Actor-Id`를 사용하는 목업 방식입니다. 로그인·회원가입·JWT 인증은 구현 범위에 포함되지 않습니다. API별 요청·응답은 실행 중인 Swagger에서 확인합니다.
+
+DB 구조는 Alembic으로 적용하며 데이터는 자동 삽입하지 않습니다. 데모 데이터·영상 준비 방법은 [데모 적용 안내](demo_seeds/README.md)를 참고합니다.
 
 ## 프론트 직접 연결과 CORS
 
@@ -31,88 +37,47 @@ curl -i -X OPTIONS 'http://127.0.0.1:8000/api/users/1/feed' \
 
 ## 디렉터리 구조
 
-Python 패키지 표시용 `__init__.py`는 트리에서 생략했습니다.
-
 ```text
 SASU_backend/
 ├── app/
-│   ├── main.py                  # FastAPI 앱·Swagger UI 설정·공통 라우터 연결
-│   │
-│   ├── api/
-│   │   └── router.py            # 모듈별 API 라우터를 /api 아래 통합
-│   │
-│   ├── core/                    # 애플리케이션 공통 설정
-│   │   ├── config.py            # 환경변수 로딩·필수값 검증·DB URL 구성
-│   │   ├── security.py          # 인증·암호화 공통 처리의 예약 위치
-│   │   └── exceptions.py        # 공통 예외·핸들러 위치
-│   │
-│   ├── db/                      # DB 공통 기반
-│   │   ├── session.py           # DB 엔진·요청별 세션·연결 확인·종료
-│   │   ├── base.py              # ORM 공통 Base·제약조건 이름 규칙
-│   │   └── models.py            # 모듈별 모델 등록 (새 모델 추가 시 갱신)
-│   │
-│   ├── modules/                 # 기능별 폴더를 추가하는 위치 (아래 2개는 작성 예시)
-│   │   ├── contents/            # 예시 1: 콘텐츠 기능을 한 폴더에 모음
-│   │   │   ├── router.py        # 콘텐츠 API 요청·응답 → service 호출
-│   │   │   ├── service.py       # 콘텐츠 업무 규칙·트랜잭션 → repository 호출
-│   │   │   ├── repository.py    # 콘텐츠 CRUD: DB 생성·조회·수정·삭제
-│   │   │   ├── schemas.py       # 콘텐츠 요청·응답 구조·필드 검증
-│   │   │   └── models.py        # 콘텐츠 DB 테이블·관계 정의
-│   │   └── users/               # 예시 2: 다른 기능도 같은 구성으로 추가
-│   │       ├── router.py        # 사용자 API 요청·응답 → service 호출
-│   │       ├── service.py       # 사용자 업무 규칙·트랜잭션 → repository 호출
-│   │       ├── repository.py    # 사용자 CRUD: DB 생성·조회·수정·삭제
-│   │       ├── schemas.py       # 사용자 요청·응답 구조·필드 검증
-│   │       └── models.py        # 사용자 DB 테이블·관계 정의
-│   │
-│   ├── integrations/            # 저장소·외부 서비스 접근
-│   │   └── storage.py           # 로컬 영상 저장소 접근 위치
-│   │
-│   └── jobs/                    # 주기 집계 코드 배치 위치
-│
-├── alembic/                     # DB 마이그레이션 환경
-│   ├── env.py                  # 공통 설정·모델로 online/offline 마이그레이션
-│   ├── script.py.mako          # 변경 이력 파일 생성 템플릿
-│   └── versions/               # 0001_initial_schema: 전체 DB 초기 구조
-├── alembic.ini                  # Alembic 경로·로그 설정
-├── scripts/
-│   └── check_db.py             # 실제 DB 연결 확인 명령
-├── tests/
-│   ├── conftest.py              # 실제 .env·개발 DB와 분리하는 fixture
-│   ├── test_config.py          # 설정 우선순위·잘못된 입력·비밀번호 처리
-│   ├── test_database.py        # 세션 종료·커밋·실패 시 롤백
-│   ├── test_application.py     # 앱 시작·종료·Swagger UI 검증
-│   ├── test_migrations.py      # 임시 DB에서 Alembic 생성·적용·되돌리기
-│   ├── contents/                # modules/contents에 대응하는 테스트 예시
-│   │   └── test_api.py          # 콘텐츠 API 테스트 위치·아직 미작성
-│   └── users/                   # modules/users에 대응하는 테스트 예시
-│       └── test_api.py          # 사용자 API 테스트 위치·아직 미작성
-├── storage/
-│   └── videos/                  # 실제 로컬 영상 파일 저장 위치
-├── requirements.txt             # Python 3.13 직접·하위 의존성과 버전 관리
-├── pyproject.toml               # Ruff·pytest 도구 설정
-├── Dockerfile                   # Python 이미지·의존성·서버 실행
-├── compose.yaml                 # 백엔드·PostgreSQL·볼륨 실행 설정
-├── .env.example                 # Python·PostgreSQL 버전과 DB 설정 예시
-├── .gitignore
-├── .dockerignore
-└── README.md
+│   ├── main.py             # FastAPI 앱·CORS·시작 및 종료 처리
+│   ├── api/                # 공통 요청 규격·의존성·라우터 등록
+│   ├── core/               # 환경 설정·목업 역할 확인·공통 오류
+│   ├── db/                 # DB 세션·ORM 모델 등록
+│   ├── modules/            # 콘텐츠·사용자·학습·복습·통계 등 기능별 모듈
+│   ├── integrations/       # 영상 저장소·ffmpeg/ffprobe 실행
+│   └── jobs/               # 예약 디렉터리
+├── alembic/                # 전체 DB 구조 생성·변경 이력
+├── scripts/                # DB 연결 확인 등 관리 명령
+├── tests/                  # 기능별 단위·API·PostgreSQL 통합 테스트
+├── demo_seeds/
+│   ├── seed.sql            # 기본 계정·콘텐츠·퀴즈·시리즈·가상 학습 기록
+│   ├── demo_injection.py   # 명시적으로 실행하는 데모 삽입 도구
+│   └── videos/             # 별도 다운로드한 원본 영상, README만 Git에 포함
+├── storage/videos/         # 서버가 실제 제공하는 영상, Git 제외
+├── requirements.txt        # 직접·하위 의존성 버전
+├── pyproject.toml          # 코드 검사·테스트 설정
+├── Dockerfile
+├── compose.yaml
+└── .env.example
 ```
+
+주요 모듈은 `contents`, `videos`, `categories`, `tags`, `users`, `likes`, `saved_contents`, `watch_records`, `feeds`, `questions`, `attempts`, `responses`, `reviews`, `events`, `curricula`, `dashboard`, `statistics`, `admin`, `system`입니다. `videos`처럼 HTTP 라우터 없이 내부 처리를 담당하는 모듈도 있습니다.
 
 ## 공통 디렉터리 역할
 
 | 디렉터리 | 역할 |
 |---|---|
 | `app/api/` | 모듈의 라우터를 통합합니다. 개별 기능의 API 코드는 해당 모듈의 `router.py`에 둡니다. |
-| `app/core/` | 환경 설정·로그 등 공통 기반과 예외·보안 처리를 배치합니다. `security.py`는 예약 파일이며 현재 범위에 로그인·JWT를 추가한 것은 아닙니다. |
+| `app/core/` | 환경 설정·공통 오류·목업 사용자 및 역할 확인을 담당합니다. `security.py`는 사용자 ID로 역할을 확인하며 로그인·JWT 인증을 제공하지 않습니다. |
 | `app/db/` | 동기 DB 엔진·요청별 세션·ORM 공통 Base를 관리합니다. 개별 테이블 모델은 각 모듈의 `models.py`에 작성하고, `app/db/models.py`에서 등록합니다. |
-| `app/modules/` | 기능별 모듈을 추가하는 위치입니다. `contents/`·`users/`는 작성 예시이며 각 모듈 안에 라우터·서비스·CRUD·스키마·모델을 둡니다. 관리자·학습자가 함께 쓰는 기능도 같은 모듈을 공유합니다. |
+| `app/modules/` | 구현된 기능별 라우터·서비스·저장소·스키마·DB 정의를 관리합니다. 관리자·학습자가 함께 쓰는 기능도 같은 모듈을 공유하며 필요한 파일만 구성합니다. |
 | `app/integrations/` | 파일 저장소나 외부 API에 접근하는 코드를 둡니다. 현재 영상 저장 대상은 로컬 `storage/videos/`이며 외부 저장 서비스는 도입하지 않았습니다. |
-| `app/jobs/` | 조회수·좋아요 수 등 주기 집계 코드를 둡니다. 실행 도구와 주기는 추후 결정합니다. |
+| `app/jobs/` | 향후 백그라운드 작업을 위한 예약 위치입니다. 현재 조회수·좋아요·저장 수는 DB 뷰에서 집계합니다. |
 | `alembic/` | 전체 DB 초기 구조와 후속 변경 이력을 관리·적용합니다. 초기 이력은 기능별 ORM 모델 없이 실행할 수 있습니다. |
-| `scripts/` | 직접 실행하는 관리 명령을 둡니다. `check_db.py`는 현재 설정의 DB에 `SELECT 1`을 실행하고 연결을 정리합니다. |
-| `tests/` | 공통 기반 테스트와 모듈별 테스트를 둡니다. 설정 테스트는 실제 `.env`를 읽지 않으며, 트랜잭션·마이그레이션 테스트는 임시 SQLite DB를 사용합니다. 실제 PostgreSQL 검증은 별도 연결 확인 명령으로 수행합니다. |
-| `storage/videos/` | 실제 영상 파일을 저장하며 컨테이너의 `/app/storage/videos`에 연결합니다. DB에는 저장 루트 기준 상대 경로를 기록하는 방향입니다. |
+| `scripts/` | 직접 실행하는 관리 명령을 둡니다. `check_db.py`는 현재 설정의 DB에 `SELECT 1`을 실행하고 연결을 정리합니다. 데모 삽입 도구는 `demo_seeds/`에 있습니다. |
+| `tests/` | 공통 기반 테스트와 모듈별 테스트를 둡니다. 기본 테스트는 대역·임시 파일·메모리 SQLite 등을 사용합니다. PostgreSQL 통합 테스트는 별도 활성화 조건과 fixture의 데이터 정리 방식을 확인한 후 실행합니다. |
+| `storage/videos/` | 실제 영상 파일을 저장하며 컨테이너의 `/app/storage/videos`에 연결합니다. DB에는 저장 루트 기준 상대 경로를 기록합니다. |
 
 ## 모듈 내부 역할
 
@@ -140,15 +105,11 @@ HTTP 요청
 
 ## 새 모듈을 추가하는 방법
 
-예를 들어 카테고리 기능을 개발한다면 아래 순서로 확장합니다. `categories/`는 설명을 위한 이름이며 현재 생성하지 않았습니다.
+`app/modules/<기능명>/` 아래에 필요한 파일만 추가합니다. HTTP 요청을 받으면 `router.py`를 만들고 `app/api/router.py`에 등록합니다. 서비스는 처리 흐름과 트랜잭션을 관리하고, 저장소는 DB 조회·저장을 담당합니다.
 
-1. `app/modules/categories/`를 만들고 Python 패키지용 `__init__.py`를 추가합니다.
-2. 예시 모듈처럼 `router.py`, `service.py`, `repository.py`, `schemas.py`, `models.py`를 필요한 만큼 작성합니다.
-3. 해당 모듈의 라우터를 `app/api/router.py`에서 `include_router`로 연결합니다. 모듈마다 FastAPI 앱을 새로 만들지 않고 `app/main.py`의 앱을 공유합니다.
-4. DB 모델은 `app/db/base.py`의 `Base`를 상속하고, 해당 모델 모듈 경로를 `app/db/models.py`의 `MODEL_MODULES`에 추가합니다. Alembic으로 스키마 변경을 관리하며 엔진·세션 기반은 공통 `app/db/`를 사용합니다.
-5. `tests/categories/`에 해당 기능의 테스트를 추가합니다.
+현재 DB 접근은 ORM 모델, SQLAlchemy Core 테이블, SQL을 함께 사용합니다. 다른 기능이 소유한 정의는 해당 모듈에서 가져오며, ORM 모델을 추가한 경우 `app/db/models.py`의 등록 대상을 확인합니다. 기능별 테스트도 함께 작성합니다.
 
-다섯 파일은 역할을 보여주는 기본 예시이며, DB 테이블이 필요 없는 기능에는 `models.py`를 만들지 않는 등 필요한 파일만 둡니다. 다른 모듈과 공유하는 규칙은 담당 서비스에서 관리하고 중복 구현을 피합니다. **새 기능은 `modules/` 아래 새 모듈로 확장하고, 서버 전체에서 공유하는 설정·DB 연결·외부 연동은 공통 디렉터리에 둡니다.**
+DB 전체 구조는 Alembic이 관리합니다. 기능별 모델을 모두 만들거나 `create_all()`로 테이블을 생성할 필요는 없습니다. 모델·스키마·라우터가 필요 없는 내부 처리 모듈에는 빈 파일을 일괄 생성하지 않습니다.
 
 ## 의존성·실행 설정 상태
 
@@ -164,13 +125,14 @@ HTTP 요청
 | Python 3.13·FastAPI·Uvicorn | 서버 런타임·앱 진입점·개발 자동 재시작 설정 |
 | Swagger UI·ReDoc·OpenAPI | FastAPI 기본 제공. 문서 URL·제목·버전·Swagger UI 표시 옵션 설정 |
 | PostgreSQL 18 | Compose 이미지·초기 DB 접속값·데이터 볼륨·준비 상태 검사 설정 |
-| Pydantic·pydantic-settings | 환경변수 로딩·검증 구현. 요청·응답 스키마는 기능 개발 시 작성 |
-| SQLAlchemy·Psycopg 3 | 동기 엔진·요청별 세션·공통 Base·모델 등록 구현. 개별 테이블 모델은 미작성 |
+| Pydantic·pydantic-settings | 환경변수와 API 요청·응답 검증 |
+| SQLAlchemy·Psycopg 3 | 동기 세션·트랜잭션, 기능별 ORM·Core·SQL 기반 조회·저장 |
 | Alembic | online/offline 실행 설정·변경 이력 생성 템플릿·전체 DB 초기 마이그레이션 |
-| python-multipart | 영상 업로드에 사용 예정. 업로드 API는 아직 미구현 |
-| Ruff·pytest·HTTPX | 검사·테스트용 설정과 공통 기반 테스트 작성. 예시 모듈 API 테스트는 미작성 |
+| python-multipart | multipart 영상 업로드 수신 |
+| ffmpeg·ffprobe | 영상 코덱·길이·해상도 검사와 웹 재생용 정규화 |
+| Ruff·pytest·HTTPX | 정적 검사·기능별 단위 및 API 테스트·조건부 PostgreSQL 통합 테스트 |
 
-모듈별 ORM 모델·API는 기능 설계에 맞춰 이어서 작성합니다. 전체 DB 구조는 아래 초기 마이그레이션으로 구성하며 초기 데이터는 포함하지 않습니다. 영상 길이·형식 검사용 도구와 주기 집계 실행 방식은 해당 기능을 구현할 때 결정합니다.
+전체 DB 구조는 마이그레이션으로 구성하며 데모 데이터는 별도로 삽입합니다. 영상은 ffprobe로 검사한 뒤 ffmpeg로 정규화하고, 조회수·좋아요·저장 수는 기존 DB 뷰에서 집계합니다.
 
 ## API 문서 (Swagger UI)
 
@@ -184,15 +146,13 @@ HTTP 요청
 
 `app/main.py`에서 문서 제목·설명·버전·URL을 설정합니다. Swagger UI에는 API 필터와 요청 소요 시간 표시를 활성화했습니다. 각 모듈에서 요청·응답 스키마와 라우터를 작성하고 `app/api/router.py`에 연결하면 해당 API가 문서에 자동 반영됩니다. 모듈별 묶음은 라우터의 `tags`로 지정합니다.
 
-현재 개별 API는 구현하지 않았으므로 문서에 표시할 업무 API 목록은 비어 있습니다.
+`GET /api/health`는 DB 연결과 영상 저장소의 읽기·쓰기 상태를 함께 확인합니다. 학습 기록을 변경하는 API는 Swagger에 표시된 `X-Record-Generation` 등 각 요청 조건을 확인합니다.
 
 ## Docker 실행과 버전 설정
 
 설정 파일은 저장소 루트의 `compose.yaml`, `Dockerfile`, `.env.example`입니다. `.env.example`을 `.env`로 복사한 뒤 버전·DB 비밀번호·포트를 조정합니다.
 
-```sh
-cp -n .env.example .env
-```
+macOS와 Windows 모두 파일 탐색기나 편집기에서 복사해도 됩니다. 기존 `.env`가 있으면 유지합니다.
 
 | 설정 | 기본값 | 적용 위치 |
 |---|---|---|
@@ -246,13 +206,36 @@ docker compose up -d --wait
 - `init: true`로 백엔드 하위 프로세스의 신호 전달·종료 처리를 보조합니다.
 - 영상은 로컬 `storage/videos/`에 저장합니다.
 
-이 Compose 파일은 소스 연결과 `--reload`를 사용하는 로컬 개발 구성입니다. 컨테이너에서도 다음 명령으로 검사할 수 있습니다. 공통 기반 테스트는 실제 개발 DB의 데이터를 변경하지 않습니다.
+이 Compose 파일은 소스 연결과 `--reload`를 사용하는 로컬 개발 구성입니다. 기본 검사는 다음과 같습니다.
 
 ```sh
 docker compose exec backend ruff check app tests scripts alembic
-docker compose exec backend ruff format --check app tests scripts alembic
 docker compose exec backend pytest
 ```
+
+PostgreSQL 전용 테스트는 해당 실행 변수를 지정하지 않으면 건너뜁니다. 따라서 기본 테스트 통과가 DB 통합·동시성 검증 완료를 의미하지는 않습니다.
+
+- `SASU_TEST_POSTGRES=1`: 해당 기능의 fixture가 별도 테스트 DB를 생성·제거합니다. 별도 테스트 DB를 허용한 환경에서 사용합니다.
+- `SASU_TEST_LIKES_POSTGRES=1`, `SASU_TEST_SAVED_CONTENTS_POSTGRES=1`: 연결된 DB에서 검증용 데이터를 생성하고 정리합니다.
+- 데모 전용 테스트는 `demo_seeds/` 마운트가 필요합니다. `SASU_TEST_SEED_POSTGRES=1`을 지정하면 연결된 DB의 테이블을 트랜잭션 안에서 비운 뒤 검증하고 롤백합니다. 실행 중 테이블 잠금이 발생합니다.
+
+데모 도구의 파일 처리 테스트만 실행하려면:
+
+```sh
+docker compose run --rm -v ./demo_seeds:/app/demo_seeds:ro backend python -m pytest tests/test_demo_seed_files.py -q
+```
+
+## 데모 데이터
+
+구글 드라이브에서 받은 원본 영상을 이름 변경 없이 `demo_seeds/videos/` 바로 아래에 넣습니다. 자세한 실행 순서는 [데모 적용 안내](demo_seeds/README.md)를 참고합니다. 서버 영상 저장 위치는 로컬 `storage/videos/`이며 Docker named volume을 사용하지 않습니다.
+
+```sh
+docker compose run --rm -v ./demo_seeds:/app/demo_seeds:ro backend python -m demo_seeds.demo_injection
+```
+
+처음에는 원본 파일명·크기·SHA-256을 확인하고 서버 저장소로 복사합니다. 이미 적용한 데이터는 유지하되 현재 콘텐츠에 연결된 모든 영상의 존재·크기·읽기 가능 여부를 DB 정보로 확인합니다. 영상이 누락되거나 DB 정보와 맞지 않으면 완료 메시지 대신 문제의 콘텐츠 ID와 파일 경로를 안내하고 중단합니다. 교체 전 영상 자산은 검사하지 않으며 기존 파일을 자동 복구하거나 덮어쓰지 않습니다.
+
+SQL의 삽입과 파일 검사가 모두 성공해야 DB 변경을 확정합니다. 실패하면 이번 실행의 DB 변경과 새로 복사한 파일만 정리합니다. `docker compose down -v`로 DB를 비워도 로컬 서버 영상과 데모 원본은 남습니다. 기존 데모를 완전히 초기화할 때는 해당 서버 사본도 별도로 정리합니다.
 
 로그 확인과 종료:
 
@@ -282,8 +265,6 @@ API에서 세션이 필요하면 `app/db/session.py`의 `get_db`를 FastAPI `Dep
 저장소 루트에서 `.env`를 준비하고 DB 비밀번호를 설정한 뒤 실행합니다. 기존 `.env`가 있다면 그대로 사용합니다.
 
 ```sh
-cp -n .env.example .env
-# .env의 POSTGRES_PASSWORD 등 로컬 설정 확인
 docker compose up --build -d --wait
 docker compose exec backend alembic upgrade head
 docker compose exec backend alembic current
@@ -291,7 +272,7 @@ docker compose exec backend alembic current
 
 `current` 결과가 `0001_initial_schema (head)`이면 초기 적용이 완료된 상태입니다. 이미 적용한 DB에서 `upgrade head`를 다시 실행하면 기존 이력은 재실행하지 않습니다. 이후 변경도 Git으로 받은 새 이력을 같은 명령으로 적용합니다.
 
-초기 이력은 `sasu` 스키마에 21개 테이블과 외래키·제약조건·인덱스·검증 트리거·집계 뷰 4개·초기화 함수를 생성합니다. 사용자·카테고리·테스트 데이터를 삽입하지 않으며 초기화 함수도 정의만 합니다. 이력은 기본 `public.alembic_version`에 기록됩니다. 기능별 ORM 모델은 이후 `sasu` 스키마의 실제 테이블에 맞춰 매핑합니다.
+초기 이력은 `sasu` 스키마에 21개 테이블과 외래키·제약조건·인덱스·검증 트리거·집계 뷰 4개·초기화 함수를 생성합니다. 사용자·카테고리·테스트 데이터를 삽입하지 않으며 초기화 함수도 정의만 합니다. 이력은 기본 `public.alembic_version`에 기록됩니다. 기능별 ORM 모델·Core 테이블·SQL은 이 실제 DB 구조를 참조합니다.
 
 이 절차는 `sasu` 스키마가 없는 신규 DB 기준입니다. 수동으로 만든 `sasu` 스키마나 다른 마이그레이션 이력이 있는 DB를 자동으로 덮어쓰거나 초기화하지 않습니다. 적용 실패 시 기존 구조·이력의 일치 여부를 먼저 확인합니다. `downgrade base`는 이 초기 이력의 테이블과 데이터를 삭제하므로 최초 세팅 절차에는 사용하지 않습니다.
 

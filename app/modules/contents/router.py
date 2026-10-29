@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
-from app.api.dependencies import ActorId, OptionalActorId
+from app.api.dependencies import ActorId, OptionalActorId, reject_query_parameters
 from app.api.dependencies import ResourceId as ContentId
 from app.core.config import get_settings
 from app.core.exceptions import ApiError, ErrorResponse
@@ -68,6 +68,7 @@ def list_contents(
     "/video-policy",
     response_model=VideoPolicyOut,
     operation_id="API-CNT-VIDEO-POLICY",
+    dependencies=[Depends(reject_query_parameters)],
     summary="영상 업로드 허용 조건",
     description="업로드 화면 안내와 파일 선택 accept 속성에 쓰는 용량·길이·형식 기준입니다.",
 )
@@ -111,6 +112,7 @@ def get_content(
     response_model=EditableContent,
     status_code=201,
     operation_id="API-CNT-04",
+    dependencies=[Depends(reject_query_parameters)],
     summary="콘텐츠 초안 생성",
     description="관리자 콘텐츠 초안을 저장합니다. 영상은 별도로 업로드합니다.",
 )
@@ -124,6 +126,7 @@ def create_content(
     "/{content_id}",
     response_model=EditableContent,
     operation_id="API-CNT-05",
+    dependencies=[Depends(reject_query_parameters)],
     summary="콘텐츠 정보·태그 연결 수정",
     description=(
         "전달한 필드만 수정합니다. 태그 배열은 전체 교체하며, 공개 필수값을 깨는 수정은 취소합니다."
@@ -209,6 +212,7 @@ def get_video(
     "/{content_id}/video",
     response_model=VideoInfo,
     operation_id="API-CNT-07",
+    dependencies=[Depends(reject_query_parameters)],
     summary="영상 업로드·교체",
     responses={
         413: {"model": ErrorResponse, "description": "허용 용량 초과"},
@@ -281,6 +285,7 @@ async def upload_video(
     "/{content_id}/publish",
     response_model=EditableContent,
     operation_id="API-CNT-08",
+    dependencies=[Depends(reject_query_parameters)],
     summary="콘텐츠 공개",
     description=(
         "영상·제목·카테고리·태그·핵심 내용·출처·검토일과 실제 파일을 검사합니다. "

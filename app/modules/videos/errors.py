@@ -1,7 +1,6 @@
 """영상 처리 오류. 공통 ApiError라 {"detail": {code, message, fields}} 형식으로 응답한다.
 
-기존 API 명세의 오류 코드(EMPTY_UPLOAD·UNSUPPORTED_MEDIA_TYPE·INVALID_VIDEO 등)를 그대로 쓰고,
-데이터 처리에서 새로 검사하는 항목(용량·길이·변환)만 코드를 추가했다.
+파일 입력·검사 실패와 서버 변환·도구 오류를 코드와 HTTP 상태로 구분한다.
 fields는 업로드 폼 필드 이름(file)을 가리켜 화면이 입력란 옆에 메시지를 표시할 수 있게 한다.
 """
 

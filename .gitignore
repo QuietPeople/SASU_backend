@@ -11,4 +11,6 @@ __pycache__/
 htmlcov/
 storage/videos/*
 !storage/videos/.gitkeep
+/demo_seeds/videos/*
+!/demo_seeds/videos/README.md
 agent/
