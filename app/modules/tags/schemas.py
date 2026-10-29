@@ -15,7 +15,7 @@ class TagListQuery(PageQuery):
 class TagCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    name: Annotated[str, Field(min_length=1, max_length=30)]
+    name: Annotated[str, Field(min_length=2, max_length=30)]
 
 
 class TagRead(BaseModel):

@@ -213,6 +213,25 @@ def test_patch_omission_null_tag_replacement_and_caution(context):
     assert body["content"]["tags"] == [] and body["caution_text"] is None
 
 
+@pytest.mark.parametrize("name", ["가", "가" * 80])
+def test_existing_tag_names_remain_readable_and_attachable(context, name):
+    ctx = context
+    with ctx.factory() as session, session.begin():
+        tag = Tag(name=name)
+        session.add(tag)
+        session.flush()
+        tag_id = tag.tag_id
+    expected = {"tag_id": tag_id, "name": name}
+    assert expected in ctx.client.get("/api/tags").json()["items"]
+    content_id = draft(ctx, tag_ids=[tag_id])
+    assert editor(ctx, content_id).json()["detail"]["content"]["tags"] == [expected]
+    updated = ctx.client.patch(
+        f"/api/contents/{content_id}", json={"tag_ids": [tag_id]}, headers=ctx.headers
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["detail"]["content"]["tags"] == [expected]
+
+
 @pytest.mark.parametrize(
     "change,code",
     [

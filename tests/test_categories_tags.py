@@ -228,6 +228,20 @@ def test_registered_category_and_tag_connect_to_content(reference_context):
         assert session.get(ContentTag, (content["content_id"], tag["tag_id"])) is not None
 
 
+@pytest.mark.parametrize("name", ["가", "  가  "])
+def test_new_tags_require_two_characters_without_creating_rows(reference_context, name):
+    client, factory, ids = reference_context
+    response = client.post(
+        "/api/tags", json={"name": name}, headers={"X-Actor-Id": str(ids["admin"])}
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"]["fields"] == [
+        {"field": "body.name", "reason": "string_too_short"}
+    ]
+    with factory() as session:
+        assert session.scalar(select(func.count()).select_from(Tag)) == 0
+
+
 def test_reference_apis_are_registered_in_openapi(reference_context):
     client, factory, ids = reference_context
     paths = client.get("/openapi.json").json()["paths"]
