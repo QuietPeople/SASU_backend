@@ -26,4 +26,5 @@ def build_summary(row, actor_id: int, *, preview: bool = False) -> ContentSummar
         watch_completed=row["watch_completed"],
         has_quiz=row["has_quiz"],
         status=row["status"],
+        thumbnail_url=row.get("thumbnail_url"),
     )

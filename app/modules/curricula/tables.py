@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Column, MetaData, String, Table
+from sqlalchemy import BigInteger, Column, MetaData, String, Table, Uuid
 
 metadata = MetaData(schema="sasu")
 curricula = Table(
@@ -6,6 +6,7 @@ curricula = Table(
     metadata,
     Column("curriculum_id", BigInteger),
     Column("title", String(200)),
+    Column("thumbnail_image_id", Uuid),
 )
 curriculum_items = Table(
     "curriculum_items",

@@ -164,6 +164,64 @@ def probe(path: Path, *, timeout: float = 20.0) -> ProbeResult:
     )
 
 
+def scale_and_remux(
+    src: Path,
+    dst: Path,
+    *,
+    output_format: str,
+    transcode_audio: bool,
+    long_edge: int,
+    timeout: float,
+) -> None:
+    """고해상도 영상을 long_edge px 이하로 축소하며 컨테이너를 다시 쓴다.
+    비율·회전 메타데이터를 유지하고 짝수 픽셀로 보정한다."""
+    scale_filter = (
+        f"scale='min({long_edge},iw)':'min({long_edge},ih)':"
+        f"force_original_aspect_ratio=decrease,"
+        f"scale=trunc(iw/2)*2:trunc(ih/2)*2"
+    )
+    cmd = [
+        _binary("ffmpeg"),
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-y",
+        "-protocol_whitelist",
+        "file",
+        "-i",
+        str(src),
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a:0?",
+        "-map_metadata",
+        "-1",
+        "-vf",
+        scale_filter,
+    ]
+    if output_format == "mp4":
+        cmd += ["-c:v", "libx264", "-crf", "23", "-preset", "medium"]
+        cmd += ["-c:a", "aac", "-b:a", "128k"] if transcode_audio else ["-c:a", "copy"]
+        cmd += ["-movflags", "+faststart", "-f", "mp4"]
+    else:
+        cmd += ["-c:v", "libvpx-vp9", "-crf", "30", "-b:v", "0", "-deadline", "good", "-cpu-used", "4"]
+        cmd += ["-c:a", "libopus"] if transcode_audio else ["-c:a", "copy"]
+        cmd += ["-f", "webm"]
+    cmd.append(str(dst))
+    try:
+        proc = subprocess.run(
+            cmd, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout, check=False
+        )
+    except subprocess.TimeoutExpired as exc:
+        dst.unlink(missing_ok=True)
+        raise ProcessingFailed("영상 축소 처리 시간이 초과되었습니다.") from exc
+    if proc.returncode != 0 or not dst.exists() or dst.stat().st_size == 0:
+        dst.unlink(missing_ok=True)
+        logger.error("ffmpeg scale failed: %s", proc.stderr.decode(errors="replace")[-500:])
+        raise ProcessingFailed("영상 해상도 축소 처리에 실패했습니다.")
+
+
 def remux(
     src: Path, dst: Path, *, output_format: str, transcode_audio: bool, timeout: float
 ) -> None:

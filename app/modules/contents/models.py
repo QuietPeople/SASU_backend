@@ -24,6 +24,17 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
 
+class ImageAsset(Base):
+    __tablename__ = "image_assets"
+    __table_args__ = {"schema": "sasu"}
+
+    image_asset_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    storage_path: Mapped[str] = mapped_column(String(1024), unique=True)
+    mime_type: Mapped[str] = mapped_column(String(100))
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ContentStatus(StrEnum):
     DRAFT = "DRAFT"
     PUBLISHED = "PUBLISHED"
@@ -57,6 +68,9 @@ class Content(Base):
     )
     video_asset_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("sasu.video_assets.video_asset_id", ondelete="RESTRICT"), unique=True
+    )
+    thumbnail_image_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("sasu.image_assets.image_asset_id", ondelete="SET NULL")
     )
     title: Mapped[str | None] = mapped_column(String(200))
     core_content: Mapped[str | None] = mapped_column(Text)

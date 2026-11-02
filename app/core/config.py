@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     db_echo: bool = False
     db_connect_timeout: int = Field(default=5, ge=1, le=60)
     video_storage_root: Path = PROJECT_ROOT / "storage" / "videos"
+    image_storage_root: Path = PROJECT_ROOT / "storage" / "images"
     # 영상 업로드 정책(데이터 처리). 숏폼 기준 제안값이며 .env로 바꿀 수 있다.
     video_max_mb: int = Field(default=200, ge=1, le=2048)
     video_min_seconds: float = Field(default=1.0, gt=0)
@@ -74,7 +75,7 @@ class Settings(BaseSettings):
                 origins.append(value)
         return origins
 
-    @field_validator("video_storage_root")
+    @field_validator("video_storage_root", "image_storage_root")
     @classmethod
     def resolve_storage_root(cls, value: Path) -> Path:
         return value if value.is_absolute() else PROJECT_ROOT / value

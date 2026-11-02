@@ -22,7 +22,7 @@ from app.core.config import get_settings
 from app.core.exceptions import ApiError, ErrorResponse
 from app.db.session import get_db
 from app.integrations.storage import LocalVideoStorage
-from app.modules.contents import service, video_service
+from app.modules.contents import service, thumbnail_service, video_service
 from app.modules.contents.schemas import (
     ContentCreate,
     ContentDetail,
@@ -279,6 +279,67 @@ async def upload_video(
         file.filename or "",
         expected_media_revision,
     )
+
+
+@router.put(
+    "/{content_id}/thumbnail",
+    status_code=204,
+    operation_id="API-CNT-IMG-01",
+    dependencies=[Depends(reject_query_parameters)],
+    summary="콘텐츠 썸네일 등록·교체",
+    description="관리자가 JPEG·PNG·WebP 이미지를 썸네일로 등록합니다. 최대 10MB.",
+    responses={
+        413: {"model": ErrorResponse, "description": "이미지 용량 초과"},
+        415: {"model": ErrorResponse, "description": "지원하지 않는 이미지 형식"},
+    },
+)
+async def put_thumbnail(
+    content_id: ContentId,
+    actor_id: ActorId,
+    session: Annotated[Session, Depends(get_db)],
+    file: Annotated[UploadFile, File(description="썸네일 이미지(JPEG·PNG·WebP, 최대 10MB)")],
+):
+    data = await file.read()
+    thumbnail_service.put_content_thumbnail(session, content_id, actor_id, data)
+
+
+@router.get(
+    "/{content_id}/thumbnail",
+    response_class=Response,
+    operation_id="API-CNT-IMG-02",
+    summary="콘텐츠 썸네일 제공",
+    responses={
+        200: {
+            "description": "썸네일 이미지",
+            "content": {
+                "image/jpeg": {},
+                "image/png": {},
+                "image/webp": {},
+            },
+        }
+    },
+)
+def get_thumbnail(
+    content_id: ContentId,
+    session: Annotated[Session, Depends(get_db)],
+):
+    data, mime = thumbnail_service.get_content_thumbnail(session, content_id)
+    return Response(content=data, media_type=mime, headers={"Cache-Control": "public, max-age=86400"})
+
+
+@router.delete(
+    "/{content_id}/thumbnail",
+    status_code=204,
+    operation_id="API-CNT-IMG-03",
+    dependencies=[Depends(reject_query_parameters)],
+    summary="콘텐츠 썸네일 삭제",
+)
+def delete_thumbnail(
+    content_id: ContentId,
+    actor_id: ActorId,
+    session: Annotated[Session, Depends(get_db)],
+):
+    thumbnail_service.delete_content_thumbnail(session, content_id, actor_id)
 
 
 @router.post(

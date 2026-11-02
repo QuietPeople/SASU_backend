@@ -60,6 +60,9 @@ def build_content_summary(item: repository.Presentation, actor_id: int) -> Conte
             "watch_completed": item.watch_completed,
             "has_quiz": item.has_quiz,
             "status": content.status,
+            "thumbnail_url": f"/api/contents/{content.content_id}/thumbnail"
+            if item.thumbnail is not None
+            else None,
         },
         actor_id,
         preview=content.status == ContentStatus.DRAFT,

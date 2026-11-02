@@ -95,6 +95,9 @@ class LocalVideoStorage:
         return full
 
 
+LocalImageStorage = LocalVideoStorage
+
+
 def check_video_storage_access(root: Path) -> None:
     """저장 루트의 읽기·쓰기 가능 여부를 실제 I/O로 확인한다. 검사 파일은 남기지 않는다."""
     if not root.is_dir():
