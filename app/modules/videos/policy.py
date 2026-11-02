@@ -27,6 +27,7 @@ class VideoPolicy:
 
     probe_timeout_sec: float = 20.0
     remux_timeout_sec: float = 120.0
+    scale_timeout_sec: float = 300.0
 
     @property
     def max_megabytes(self) -> int:

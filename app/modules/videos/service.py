@@ -17,10 +17,10 @@ from enum import StrEnum
 from pathlib import Path
 from typing import BinaryIO
 
-from app.integrations.ffmpeg import ProbeResult, probe, remux, sniff_container
+from app.integrations.ffmpeg import ProbeResult, probe, remux, scale_and_remux, sniff_container
 from app.integrations.storage import LocalVideoStorage
 
-from .errors import DurationOutOfRange, EmptyFile, FileTooLarge, UnsupportedMedia
+from .errors import DurationOutOfRange, EmptyFile, FileTooLarge, ProcessingFailed, UnsupportedMedia
 from .policy import VideoPolicy
 
 logger = logging.getLogger(__name__)
@@ -47,6 +47,7 @@ class NormalizePlan:
 
     output: OutputKind
     transcode_audio: bool = False
+    scale_to: int | None = None  # BE-01: 긴 변을 이 px로 축소. None이면 remux만
     notes: tuple[str, ...] = ()
 
 
@@ -121,28 +122,35 @@ def decide_plan(container: str, info: ProbeResult, policy: VideoPolicy) -> Norma
         )
     if info.width <= 0 or info.height <= 0:
         raise UnsupportedMedia("영상 해상도를 확인할 수 없습니다.")
+
+    # BE-01: 긴 변이 정책 한계를 넘으면 재인코딩으로 자동 축소한다.
+    scale_to: int | None = None
     if max(info.width, info.height) > policy.max_long_edge_px:
-        raise UnsupportedMedia(
-            f"해상도가 너무 큽니다. 긴 변 {policy.max_long_edge_px}px 이하로 올려 주세요. "
-            f"(현재 {info.display_width}x{info.display_height})"
-        )
+        scale_to = policy.max_long_edge_px
 
     video, audio = info.video_codec, info.audio_codec
     if video in policy.mp4_video_codecs:
         # MP4·MOV·MKV 안의 H.264 → MP4로 다시 감싼다(재인코딩 없음).
         if audio is None or audio in policy.mp4_audio_codecs:
-            return NormalizePlan(OutputKind.MP4)
+            notes = (f"긴 변을 {scale_to}px로 축소했습니다.",) if scale_to else ()
+            return NormalizePlan(OutputKind.MP4, scale_to=scale_to, notes=notes)
         if policy.transcode_incompatible_audio:
+            notes_list = []
+            if scale_to:
+                notes_list.append(f"긴 변을 {scale_to}px로 축소했습니다.")
+            notes_list.append(f"음성 코덱 {audio}를 AAC로 변환했습니다.")
             return NormalizePlan(
                 OutputKind.MP4,
                 transcode_audio=True,
-                notes=(f"음성 코덱 {audio}를 AAC로 변환했습니다.",),
+                scale_to=scale_to,
+                notes=tuple(notes_list),
             )
         raise UnsupportedMedia(f"음성 코덱 {audio}는 브라우저에서 재생할 수 없습니다.")
 
     if container == "ebml" and video in policy.webm_video_codecs:
         if audio is None or audio in policy.webm_audio_codecs:
-            return NormalizePlan(OutputKind.WEBM)
+            notes = (f"긴 변을 {scale_to}px로 축소했습니다.",) if scale_to else ()
+            return NormalizePlan(OutputKind.WEBM, scale_to=scale_to, notes=notes)
         raise UnsupportedMedia(
             f"WebM 음성 코덱 {audio}는 지원하지 않습니다. Opus 또는 Vorbis로 저장해 주세요."
         )
@@ -191,13 +199,23 @@ class VideoIngestService:
 
     def normalize(self, src: Path, plan: NormalizePlan) -> Path:
         dst = self.storage.temp_file(plan.output.ext)
-        remux(
-            src,
-            dst,
-            output_format=plan.output.value,
-            transcode_audio=plan.transcode_audio,
-            timeout=self.policy.remux_timeout_sec,
-        )
+        if plan.scale_to is not None:
+            scale_and_remux(
+                src,
+                dst,
+                output_format=plan.output.value,
+                transcode_audio=plan.transcode_audio,
+                long_edge=plan.scale_to,
+                timeout=self.policy.scale_timeout_sec,
+            )
+        else:
+            remux(
+                src,
+                dst,
+                output_format=plan.output.value,
+                transcode_audio=plan.transcode_audio,
+                timeout=self.policy.remux_timeout_sec,
+            )
         return dst
 
     def ingest(self, src: BinaryIO, original_name: str | None) -> IngestedVideo:
@@ -209,6 +227,7 @@ class VideoIngestService:
             plan = decide_plan(container, info, self.policy)
             normalized = self.normalize(upload, plan)
             final = probe(normalized, timeout=self.policy.probe_timeout_sec)
+            _verify_normalized(info, final, plan, self.policy)  # BE-02
             asset_id = uuid.uuid4()
             relative_path = self.storage.new_relative_path(asset_id, plan.output.ext)
             stored = self.storage.commit(normalized, relative_path)
@@ -229,6 +248,39 @@ class VideoIngestService:
             upload.unlink(missing_ok=True)
             if normalized is not None:
                 normalized.unlink(missing_ok=True)
+
+
+def _verify_normalized(
+    original: ProbeResult,
+    result: ProbeResult,
+    plan: NormalizePlan,
+    policy: VideoPolicy,
+) -> None:
+    """BE-02: 정규화 결과를 재검증한다. 유효 치수·재생 호환 코덱·길이 오차 5% 이내를 확인한다."""
+    if result.width <= 0 or result.height <= 0:
+        raise ProcessingFailed("정규화 후 영상 해상도를 읽을 수 없습니다.")
+
+    if plan.output == OutputKind.MP4:
+        ok_video, ok_audio = policy.mp4_video_codecs, policy.mp4_audio_codecs
+    else:
+        ok_video, ok_audio = policy.webm_video_codecs, policy.webm_audio_codecs
+
+    if result.video_codec not in ok_video:
+        raise ProcessingFailed(
+            f"정규화 후 영상 코덱 {result.video_codec!r}이(가) 재생 허용 목록에 없습니다."
+        )
+    if result.audio_codec is not None and result.audio_codec not in ok_audio:
+        raise ProcessingFailed(
+            f"정규화 후 음성 코덱 {result.audio_codec!r}이(가) 재생 허용 목록에 없습니다."
+        )
+
+    if original.duration_sec > 0:
+        delta = abs(result.duration_sec - original.duration_sec) / original.duration_sec
+        if delta > 0.05:
+            raise ProcessingFailed(
+                f"정규화 후 영상 길이가 원본과 크게 다릅니다 "
+                f"({original.duration_sec:.1f}s → {result.duration_sec:.1f}s)."
+            )
 
 
 def get_video_ingest_service() -> VideoIngestService:

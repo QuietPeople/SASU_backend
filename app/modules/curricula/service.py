@@ -77,6 +77,11 @@ def make_summary(curriculum, steps: list[CurriculumStep], user_id: int | None) -
         if steps and completed is not None
         else None
     )
+    thumbnail_url = (
+        f"/api/curriculums/{curriculum['curriculum_id']}/thumbnail"
+        if curriculum.get("thumbnail_image_id") is not None
+        else None
+    )
     return CurriculumSummary(
         curriculum_id=curriculum["curriculum_id"],
         title=curriculum["title"],
@@ -85,6 +90,7 @@ def make_summary(curriculum, steps: list[CurriculumStep], user_id: int | None) -
         available_steps=sum(step.available for step in steps),
         completed_steps=completed,
         progress_percent=percent,
+        thumbnail_url=thumbnail_url,
     )
 
 

@@ -49,6 +49,7 @@ class CurriculumSummary(BaseModel):
     available_steps: int
     completed_steps: int | None
     progress_percent: float | None
+    thumbnail_url: str | None = None
 
 
 class ProgressStep(BaseModel):

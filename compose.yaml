@@ -22,13 +22,15 @@ services:
       VIDEO_MAX_MB: ${VIDEO_MAX_MB:-200}
       VIDEO_MIN_SECONDS: ${VIDEO_MIN_SECONDS:-1}
       VIDEO_MAX_SECONDS: ${VIDEO_MAX_SECONDS:-180}
+      IMAGE_STORAGE_ROOT: /app/storage/images
     volumes:
       - ./app:/app/app
       - ./tests:/app/tests
       - ./alembic:/app/alembic
       - ./alembic.ini:/app/alembic.ini:ro
       - ./scripts:/app/scripts
-      - ./storage/videos:/app/storage/videos
+      - video_data:/app/storage/videos
+      - image_data:/app/storage/images
     command:
       - uvicorn
       - app.main:app
@@ -72,3 +74,5 @@ services:
 
 volumes:
   postgres_data:
+  video_data:
+  image_data:

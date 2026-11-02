@@ -31,7 +31,9 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         settings.video_storage_root.mkdir(parents=True, exist_ok=True)
         removed = LocalVideoStorage(settings.video_storage_root).cleanup_stale_temp()
         if removed:
-            logger.info("남은 업로드 임시 파일 %d개를 정리했습니다.", removed)
+            logger.info("남은 영상 임시 파일 %d개를 정리했습니다.", removed)
+        settings.image_storage_root.mkdir(parents=True, exist_ok=True)
+        LocalVideoStorage(settings.image_storage_root).cleanup_stale_temp()
         if not ffmpeg_available():
             logger.warning("ffmpeg/ffprobe가 없어 영상 업로드가 503으로 실패합니다.")
         yield

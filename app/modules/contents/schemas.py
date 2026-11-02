@@ -133,6 +133,7 @@ class ContentSummary(ApiModel):
     watch_completed: bool | None
     has_quiz: bool
     status: ContentStatus
+    thumbnail_url: str | None = None
 
 
 class ContentPage(Page[ContentSummary]):

@@ -5,7 +5,7 @@ from sqlalchemy import case, delete, func, literal, or_, select
 from sqlalchemy.orm import Session
 
 from app.modules.categories.models import Category
-from app.modules.contents.models import Content, ContentTag, VideoAsset
+from app.modules.contents.models import Content, ContentTag, ImageAsset, VideoAsset
 from app.modules.contents.schemas import ContentListQuery
 from app.modules.curricula.repository import related_to_content
 from app.modules.likes.tables import content_likes
@@ -50,6 +50,7 @@ class Presentation:
     content: Content
     category: Category | None = None
     video: VideoAsset | None = None
+    thumbnail: ImageAsset | None = None
     tags: list[Tag] = field(default_factory=list)
     view_count: int = 0
     like_count: int = 0
@@ -134,6 +135,7 @@ def load_presentations(
             Content.content_id,
             Category,
             VideoAsset,
+            ImageAsset,
             func.coalesce(content_metrics.c.view_count, 0),
             func.coalesce(content_metrics.c.like_count, 0),
             quiz_exists,
@@ -144,13 +146,14 @@ def load_presentations(
         .select_from(Content)
         .outerjoin(Category, Category.category_id == Content.category_id)
         .outerjoin(VideoAsset, VideoAsset.video_asset_id == Content.video_asset_id)
+        .outerjoin(ImageAsset, ImageAsset.image_asset_id == Content.thumbnail_image_id)
         .outerjoin(content_metrics, content_metrics.c.content_id == Content.content_id)
         .where(Content.content_id.in_(ids))
     )
     by_id = {content.content_id: Presentation(content) for content in contents}
-    for content_id, category, video, views, likes, quiz, liked, saved, completed in rows:
+    for content_id, category, video, thumbnail, views, likes, quiz, liked, saved, completed in rows:
         item = by_id[content_id]
-        item.category, item.video = category, video
+        item.category, item.video, item.thumbnail = category, video, thumbnail
         item.view_count, item.like_count, item.has_quiz = views, likes, quiz
         item.liked, item.saved, item.watch_completed = liked, saved, completed
     for content_id, tag in session.execute(
