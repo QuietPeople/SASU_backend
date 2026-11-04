@@ -9,6 +9,7 @@ from app.core.config import get_settings
 from app.core.exceptions import ApiError
 from app.integrations.storage import LocalImageStorage
 from app.modules.contents.models import Content, ImageAsset
+from app.modules.contents.repository import get_content_for_update
 from app.modules.users.service import require_admin
 
 MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10 MB
@@ -66,7 +67,7 @@ def put_content_thumbnail(session: Session, content_id: int, actor_id: int, data
     try:
         with session.begin():
             require_admin(session, actor_id)
-            content = session.get(Content, content_id)
+            content = get_content_for_update(session, content_id)
             if content is None:
                 raise ApiError(404, "CONTENT_NOT_FOUND", "콘텐츠가 없습니다.")
             old_path: str | None = None
@@ -91,11 +92,17 @@ def put_content_thumbnail(session: Session, content_id: int, actor_id: int, data
         raise
 
 
-def get_content_thumbnail(session: Session, content_id: int) -> tuple[bytes, str]:
+def get_content_thumbnail(
+    session: Session, content_id: int, *, preview: bool = False, actor_id: int | None = None
+) -> tuple[bytes, str]:
     with session.begin():
         content = session.get(Content, content_id)
         if content is None or content.thumbnail_image_id is None:
             raise ApiError(404, "THUMBNAIL_NOT_FOUND", "등록된 썸네일이 없습니다.")
+        if content.status == "PRIVATE":
+            if not preview or actor_id is None:
+                raise ApiError(404, "THUMBNAIL_NOT_FOUND", "등록된 썸네일이 없습니다.")
+            require_admin(session, actor_id)
         asset = session.get(ImageAsset, content.thumbnail_image_id)
         if asset is None:
             raise ApiError(404, "THUMBNAIL_NOT_FOUND", "등록된 썸네일이 없습니다.")
@@ -110,7 +117,7 @@ def get_content_thumbnail(session: Session, content_id: int) -> tuple[bytes, str
 def delete_content_thumbnail(session: Session, content_id: int, actor_id: int) -> None:
     with session.begin():
         require_admin(session, actor_id)
-        content = session.get(Content, content_id)
+        content = get_content_for_update(session, content_id)
         if content is None:
             raise ApiError(404, "CONTENT_NOT_FOUND", "콘텐츠가 없습니다.")
         if content.thumbnail_image_id is None:
@@ -136,10 +143,17 @@ def put_curriculum_thumbnail(
     try:
         with session.begin():
             require_admin(session, actor_id)
-            row = session.execute(
-                text("SELECT thumbnail_image_id FROM sasu.curricula WHERE curriculum_id = :id FOR UPDATE"),
-                {"id": curriculum_id},
-            ).mappings().one_or_none()
+            row = (
+                session.execute(
+                    text(
+                        "SELECT thumbnail_image_id FROM sasu.curricula "
+                        "WHERE curriculum_id = :id FOR UPDATE"
+                    ),
+                    {"id": curriculum_id},
+                )
+                .mappings()
+                .one_or_none()
+            )
             if row is None:
                 raise ApiError(404, "CURRICULUM_NOT_FOUND", "커리큘럼이 없습니다.")
             old_path: str | None = None
@@ -158,8 +172,7 @@ def put_curriculum_thumbnail(
             session.flush()
             session.execute(
                 text(
-                    "UPDATE sasu.curricula SET thumbnail_image_id = :tid "
-                    "WHERE curriculum_id = :id"
+                    "UPDATE sasu.curricula SET thumbnail_image_id = :tid WHERE curriculum_id = :id"
                 ),
                 {"tid": asset.image_asset_id, "id": curriculum_id},
             )
@@ -172,12 +185,14 @@ def put_curriculum_thumbnail(
 
 def get_curriculum_thumbnail(session: Session, curriculum_id: int) -> tuple[bytes, str]:
     with session.begin():
-        row = session.execute(
-            text(
-                "SELECT thumbnail_image_id FROM sasu.curricula WHERE curriculum_id = :id"
-            ),
-            {"id": curriculum_id},
-        ).mappings().one_or_none()
+        row = (
+            session.execute(
+                text("SELECT thumbnail_image_id FROM sasu.curricula WHERE curriculum_id = :id"),
+                {"id": curriculum_id},
+            )
+            .mappings()
+            .one_or_none()
+        )
         if row is None or row["thumbnail_image_id"] is None:
             raise ApiError(404, "THUMBNAIL_NOT_FOUND", "등록된 썸네일이 없습니다.")
         asset = session.get(ImageAsset, row["thumbnail_image_id"])
@@ -191,18 +206,20 @@ def get_curriculum_thumbnail(session: Session, curriculum_id: int) -> tuple[byte
         raise ApiError(404, "THUMBNAIL_NOT_FOUND", "썸네일 파일을 찾을 수 없습니다.") from exc
 
 
-def delete_curriculum_thumbnail(
-    session: Session, curriculum_id: int, actor_id: int
-) -> None:
+def delete_curriculum_thumbnail(session: Session, curriculum_id: int, actor_id: int) -> None:
     with session.begin():
         require_admin(session, actor_id)
-        row = session.execute(
-            text(
-                "SELECT thumbnail_image_id FROM sasu.curricula "
-                "WHERE curriculum_id = :id FOR UPDATE"
-            ),
-            {"id": curriculum_id},
-        ).mappings().one_or_none()
+        row = (
+            session.execute(
+                text(
+                    "SELECT thumbnail_image_id FROM sasu.curricula "
+                    "WHERE curriculum_id = :id FOR UPDATE"
+                ),
+                {"id": curriculum_id},
+            )
+            .mappings()
+            .one_or_none()
+        )
         if row is None:
             raise ApiError(404, "CURRICULUM_NOT_FOUND", "커리큘럼이 없습니다.")
         if row["thumbnail_image_id"] is None:
@@ -212,10 +229,7 @@ def delete_curriculum_thumbnail(
         if asset:
             session.delete(asset)
         session.execute(
-            text(
-                "UPDATE sasu.curricula SET thumbnail_image_id = NULL "
-                "WHERE curriculum_id = :id"
-            ),
+            text("UPDATE sasu.curricula SET thumbnail_image_id = NULL WHERE curriculum_id = :id"),
             {"id": curriculum_id},
         )
     if old_path:

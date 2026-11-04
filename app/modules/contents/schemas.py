@@ -20,7 +20,7 @@ from app.modules.tags.schemas import TagRead
 StrictResourceId = Annotated[ResourceId, Field(strict=True)]
 NonBlankText = Annotated[str, Field(min_length=1)]
 Title = Annotated[str, Field(min_length=1, max_length=200)]
-ContentStatus = Literal["DRAFT", "PUBLISHED"]
+ContentStatus = Literal["DRAFT", "PUBLISHED", "PRIVATE"]
 
 
 class ApiModel(BaseModel):
@@ -34,7 +34,7 @@ class InputModel(ApiModel):
 class ContentListQuery(InputModel, PageQuery):
     q: Annotated[str, Field(max_length=200)] | None = None
     category_id: ResourceId | None = None
-    status: Literal["DRAFT", "PUBLISHED", "ALL"] | None = Field(
+    status: Literal["DRAFT", "PUBLISHED", "PRIVATE", "ALL"] | None = Field(
         default=None, description="생략 시 역할에 따라 결정: ADMIN=ALL, LEARNER=PUBLISHED."
     )
     user_id: ResourceId | None = None
@@ -46,6 +46,21 @@ class ContentDetailQuery(InputModel, ViewQuery):
 
 class VideoQuery(InputModel):
     revision: NonBlankText | None = None
+    preview: bool = False
+    actor_id: ResourceId | None = None
+
+    @model_validator(mode="after")
+    def require_preview_actor(self) -> Self:
+        if self.preview and self.actor_id is None:
+            raise ValueError("preview=true이면 actor_id가 필요합니다.")
+        return self
+
+
+class ContentDelete(InputModel):
+    confirm: StrictBool
+
+
+class ThumbnailQuery(InputModel):
     preview: bool = False
     actor_id: ResourceId | None = None
 

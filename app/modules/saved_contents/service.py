@@ -34,7 +34,11 @@ def set_saved(
         require_learner(session, actor_id, user_id)
         epoch = current_epoch(session, user_id, record_generation)
         content = contents_repository.get_content_for_update(session, content_id)
-        if content is None or (saved and content.status != ContentStatus.PUBLISHED):
+        if (
+            content is None
+            or content.status == ContentStatus.PRIVATE
+            or (saved and content.status != ContentStatus.PUBLISHED)
+        ):
             raise ApiError(404, "CONTENT_NOT_FOUND", "접근 가능한 콘텐츠가 없습니다.")
         if saved:
             repository.insert_saved_content(session, user_id, content_id, epoch)

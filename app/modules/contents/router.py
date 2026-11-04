@@ -22,15 +22,17 @@ from app.core.config import get_settings
 from app.core.exceptions import ApiError, ErrorResponse
 from app.db.session import get_db
 from app.integrations.storage import LocalVideoStorage
-from app.modules.contents import service, thumbnail_service, video_service
+from app.modules.contents import deletion_service, service, thumbnail_service, video_service
 from app.modules.contents.schemas import (
     ContentCreate,
+    ContentDelete,
     ContentDetail,
     ContentDetailQuery,
     ContentListQuery,
     ContentPage,
     ContentUpdate,
     EditableContent,
+    ThumbnailQuery,
     VideoInfo,
     VideoPolicyOut,
     VideoQuery,
@@ -43,11 +45,15 @@ router = APIRouter(
     responses={
         403: {"model": ErrorResponse, "description": "관리자 역할 필요"},
         404: {"model": ErrorResponse, "description": "행위자·대상·참조 자료 없음"},
-        409: {"model": ErrorResponse, "description": "영상 revision 불일치 또는 교체 조건 불충족"},
+        409: {
+            "model": ErrorResponse,
+            "description": "영상 revision·상태 전환 조건 불충족 또는 처리 경합",
+        },
         422: {"model": ErrorResponse, "description": "요청 형식 오류"},
         500: {"model": ErrorResponse, "description": "서버 처리·DB 오류"},
     },
 )
+
 
 @router.get(
     "",
@@ -321,10 +327,23 @@ async def put_thumbnail(
 )
 def get_thumbnail(
     content_id: ContentId,
+    query: Annotated[ThumbnailQuery, Query()],
     session: Annotated[Session, Depends(get_db)],
+    actor_header: OptionalActorId = None,
 ):
-    data, mime = thumbnail_service.get_content_thumbnail(session, content_id)
-    return Response(content=data, media_type=mime, headers={"Cache-Control": "public, max-age=86400"})
+    if query.actor_id is not None and actor_header is not None and query.actor_id != actor_header:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "VALIDATION_ERROR", "message": "Query와 헤더의 행위자가 다릅니다."},
+        )
+    data, mime = thumbnail_service.get_content_thumbnail(
+        session,
+        content_id,
+        preview=query.preview,
+        actor_id=query.actor_id or actor_header,
+    )
+    # 공개 해제 직후에도 캐시된 이미지를 새 응답처럼 재사용하지 않게 한다.
+    return Response(content=data, media_type=mime, headers={"Cache-Control": "no-store"})
 
 
 @router.delete(
@@ -359,3 +378,44 @@ def publish_content(
     return service.publish_content(
         session, actor_id, content_id, LocalVideoStorage(get_settings().video_storage_root)
     )
+
+
+@router.post(
+    "/{content_id}/unpublish",
+    response_model=EditableContent,
+    operation_id="API-CNT-09",
+    dependencies=[Depends(reject_query_parameters)],
+    summary="콘텐츠 비공개 전환",
+    description=(
+        "공개 콘텐츠를 PRIVATE로 전환합니다. 이력은 보존하고 학습자 조회·집계에서 제외합니다. "
+        "이미 비공개이면 그대로 반환하며 초안은 409입니다. 재공개는 기존 publish API를 사용합니다."
+    ),
+)
+def unpublish_content(
+    content_id: ContentId, actor_id: ActorId, session: Annotated[Session, Depends(get_db)]
+):
+    return service.make_private(
+        session, actor_id, content_id, LocalVideoStorage(get_settings().video_storage_root)
+    )
+
+
+@router.delete(
+    "/{content_id}",
+    status_code=204,
+    operation_id="API-CNT-10",
+    dependencies=[Depends(reject_query_parameters)],
+    summary="콘텐츠와 연관 데이터 영구 삭제",
+    description=(
+        "관리자 전용입니다. confirm=true가 필요하며 콘텐츠·전체 퀴즈 버전·학습 이력·좋아요·저장·"
+        "시리즈 연결을 복구할 수 없게 삭제합니다. 공유 분야·태그·사용자·시리즈는 유지합니다. "
+        "DB 커밋 후 파일을 정리하며 실패한 파일 정리는 재시도 작업으로 보존합니다. "
+        "동시 편집·학습 처리 중에는 409 CONTENT_IN_USE를 반환할 수 있습니다."
+    ),
+)
+def delete_content(
+    content_id: ContentId,
+    body: ContentDelete,
+    actor_id: ActorId,
+    session: Annotated[Session, Depends(get_db)],
+) -> None:
+    deletion_service.delete_content(session, actor_id, content_id, body)

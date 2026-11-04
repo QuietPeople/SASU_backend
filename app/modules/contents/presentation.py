@@ -5,6 +5,9 @@ from app.modules.contents.urls import build_video_url
 def build_summary(row, actor_id: int, *, preview: bool = False) -> ContentSummary:
     """권한 확인된 조회 결과를 공통 콘텐츠 응답으로 조립한다. 조회·필터링은 호출자 책임이다."""
     revision = str(row["video_asset_id"]) if row["video_asset_id"] else None
+    thumbnail_url = row.get("thumbnail_url")
+    if thumbnail_url and row["status"] == "PRIVATE":
+        thumbnail_url += f"?preview=true&actor_id={actor_id}"
     return ContentSummary(
         content_id=row["content_id"],
         title=row["title"],
@@ -26,5 +29,5 @@ def build_summary(row, actor_id: int, *, preview: bool = False) -> ContentSummar
         watch_completed=row["watch_completed"],
         has_quiz=row["has_quiz"],
         status=row["status"],
-        thumbnail_url=row.get("thumbnail_url"),
+        thumbnail_url=thumbnail_url,
     )

@@ -21,6 +21,10 @@ RESPONSE_PATHS = {value: key for key, value in CONTEXTS.items()}
 
 
 def make_attempt(session: Session, record) -> Attempt:
+    content_id = repository.question_content_id(session, record["quiz_id"])
+    content = repository.lock_content(session, content_id) if content_id is not None else None
+    if content is None or content["status"] == "PRIVATE":
+        raise ApiError(404, "ATTEMPT_NOT_FOUND", "이용 가능한 풀이를 찾을 수 없습니다.")
     version = get_version(session, record["quiz_id"], record["quiz_version_id"])
     response_id = record["response_id"]
     return Attempt(

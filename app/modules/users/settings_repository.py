@@ -87,8 +87,10 @@ def get_feed_position(session: Session, user_id: int):
         session.execute(
             text(
                 """
-                SELECT s.last_content_id
+                SELECT CASE WHEN c.status = 'PRIVATE' THEN NULL ELSE s.last_content_id END
+                    AS last_content_id
                 FROM sasu.user_settings s
+                LEFT JOIN sasu.contents c ON c.content_id = s.last_content_id
                 WHERE s.user_id = :uid
                 """
             ),

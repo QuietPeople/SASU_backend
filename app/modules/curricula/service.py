@@ -1,4 +1,4 @@
-"""커리큘럼 편성과 공통 조회. 비공개 단계도 편성과 진행률 분모에 보존한다."""
+"""커리큘럼 편성은 보존하고 PRIVATE 단계는 학습자 목록·진행률에서 제외한다."""
 
 from collections import defaultdict
 from decimal import Decimal
@@ -70,6 +70,18 @@ def make_step(row, user_id: int | None, view: str, actor_id: int) -> CurriculumS
     )
 
 
+def visible_steps(rows, user_id: int | None, view: str, actor_id: int) -> list[CurriculumStep]:
+    steps = []
+    for row in rows:
+        if view == "learner" and row["status"] == "PRIVATE":
+            continue
+        step = make_step(row, user_id, view, actor_id)
+        if view == "learner":
+            step.step_order = len(steps) + 1
+        steps.append(step)
+    return steps
+
+
 def make_summary(curriculum, steps: list[CurriculumStep], user_id: int | None) -> CurriculumSummary:
     completed = sum(bool(step.completed) for step in steps) if user_id is not None else None
     percent = (
@@ -101,10 +113,12 @@ def get_detail(
     curriculum = repository.find_curriculum(session, curriculum_id)
     if curriculum is None:
         raise ApiError(404, "CURRICULUM_NOT_FOUND", "커리큘럼을 찾을 수 없습니다.")
-    steps = [
-        make_step(row, user_id, query.view, actor.user_id)
-        for row in repository.load_steps(session, [curriculum_id], user_id)
-    ]
+    steps = visible_steps(
+        repository.load_steps(session, [curriculum_id], user_id),
+        user_id,
+        query.view,
+        actor.user_id,
+    )
     summary = make_summary(curriculum, steps, user_id)
     if query.view == "learner" and summary.available_steps == 0:
         raise ApiError(404, "CURRICULUM_NOT_FOUND", "이용 가능한 커리큘럼을 찾을 수 없습니다.")
@@ -116,8 +130,15 @@ def get_list(session: Session, query: CurriculumListQuery, actor: Actor) -> Page
     curricula = repository.list_curricula(session)
     grouped = defaultdict(list)
     for row in repository.load_steps(session, [c["curriculum_id"] for c in curricula], user_id):
-        grouped[row["curriculum_id"]].append(make_step(row, user_id, query.view, actor.user_id))
-    summaries = [make_summary(c, grouped[c["curriculum_id"]], user_id) for c in curricula]
+        grouped[row["curriculum_id"]].append(row)
+    summaries = [
+        make_summary(
+            c,
+            visible_steps(grouped[c["curriculum_id"]], user_id, query.view, actor.user_id),
+            user_id,
+        )
+        for c in curricula
+    ]
     if query.view == "learner":
         summaries = [summary for summary in summaries if summary.available_steps > 0]
     start = (query.page - 1) * query.size
@@ -187,10 +208,12 @@ def get_progress(
     curriculum = repository.find_curriculum(session, curriculum_id)
     if curriculum is None:
         raise ApiError(404, "CURRICULUM_NOT_FOUND", "커리큘럼을 찾을 수 없습니다.")
-    steps = [
-        make_step(row, user_id, "learner", actor.user_id)
-        for row in repository.load_steps(session, [curriculum_id], user_id)
-    ]
+    steps = visible_steps(
+        repository.load_steps(session, [curriculum_id], user_id),
+        user_id,
+        "learner",
+        actor.user_id,
+    )
     summary = make_summary(curriculum, steps, user_id)
     return CurriculumProgress(
         user_id=user_id,

@@ -37,7 +37,12 @@ def watch_context(
     watched_ids = list(
         session.scalars(
             select(watch_records.c.content_id)
-            .where(watch_records.c.user_id == user_id, watch_records.c.learning_epoch == epoch)
+            .join(Content, Content.content_id == watch_records.c.content_id)
+            .where(
+                watch_records.c.user_id == user_id,
+                watch_records.c.learning_epoch == epoch,
+                Content.status != ContentStatus.PRIVATE,
+            )
             .order_by(watch_records.c.last_watched_at.desc(), watch_records.c.content_id)
         )
     )

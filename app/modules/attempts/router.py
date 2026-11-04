@@ -58,7 +58,8 @@ def create_attempt(
     summary="API-ATM-02 풀이 상태·결과 복구",
     description=(
         "본인 현재 세대 풀이를 복구합니다. "
-        "콘텐츠나 문항의 현재 공개·버전 상태가 바뀌어도 원래 결과를 제공합니다."
+        "문항 버전 변경 후에도 원래 결과를 제공합니다. "
+        "PRIVATE 콘텐츠는 404이며 재공개 시 복구됩니다."
     ),
 )
 def recover_attempt(

@@ -21,7 +21,7 @@ def set_like(
         learning_epoch = current_epoch(session, user_id, record_generation)
 
         status = repository.lock_content_status(session, content_id)
-        if status is None or (liked and status != "PUBLISHED"):
+        if status is None or status == "PRIVATE" or (liked and status != "PUBLISHED"):
             raise ApiError(404, "CONTENT_NOT_FOUND", "접근 가능한 콘텐츠가 없습니다.")
 
         if liked:

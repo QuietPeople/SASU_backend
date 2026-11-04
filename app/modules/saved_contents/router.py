@@ -59,7 +59,7 @@ def save_content(
     operation_id="API-SAV-02",
     summary="API-SAV-02 콘텐츠 저장 해제",
     description=(
-        "본인의 저장을 해제합니다. 콘텐츠가 존재하면 비공개 상태에서도 해제할 수 있습니다. "
+        "본인의 저장을 해제합니다. PRIVATE 콘텐츠는 이력을 보존하며 접근을 거절합니다. "
         "이미 해제했어도 200을 반환하며 이전 세대의 요청은 409로 거절합니다."
     ),
     dependencies=[Depends(reject_query_parameters)],

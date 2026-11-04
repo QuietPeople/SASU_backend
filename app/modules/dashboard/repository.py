@@ -10,14 +10,17 @@ w.user_id=:id AND x.status='PUBLISHED') AS watched_content_count,
 (SELECT count(*) FROM sasu.watch_records w JOIN sasu.contents x USING(content_id) WHERE
 w.user_id=:id AND x.status='PUBLISHED'
   AND completed_at IS NOT NULL) AS completed_content_count,
- (SELECT count(*) FROM sasu.content_likes WHERE user_id=:id) AS liked_count,
- (SELECT count(*) FROM sasu.saved_contents WHERE user_id=:id) AS saved_count,
+ (SELECT count(*) FROM sasu.content_likes l JOIN sasu.contents x USING(content_id)
+  WHERE l.user_id=:id AND x.status='PUBLISHED') AS liked_count,
+ (SELECT count(*) FROM sasu.saved_contents s JOIN sasu.contents x USING(content_id)
+  WHERE s.user_id=:id AND x.status='PUBLISHED') AS saved_count,
  (SELECT count(*) FROM sasu.quiz_responses r JOIN sasu.quiz_attempts a USING(attempt_id)
 JOIN sasu.quizzes q USING(quiz_id) JOIN sasu.contents x USING(content_id) WHERE
 x.status='PUBLISHED' AND a.user_id=:id AND r.result IN ('CORRECT','WRONG')) AS
 answered_count,
  (SELECT count(*) FROM sasu.quiz_responses r JOIN sasu.quiz_attempts a USING(attempt_id)
-  WHERE a.user_id=:id AND r.result='SKIPPED') AS skipped_count,
+  JOIN sasu.quizzes q USING(quiz_id) JOIN sasu.contents x USING(content_id)
+  WHERE a.user_id=:id AND r.result='SKIPPED' AND x.status='PUBLISHED') AS skipped_count,
  (SELECT count(*) FROM sasu.current_wrong_answers WHERE user_id=:id) AS current_wrong_count,
 (SELECT count(*) FROM sasu.first_video_responses f JOIN sasu.quizzes q USING(quiz_id) JOIN
 sasu.contents x USING(content_id) WHERE x.status='PUBLISHED' AND f.user_id=:id) AS
@@ -40,7 +43,9 @@ result='CORRECT')
   WHERE p.user_id=:id AND p.completed_steps>0 AND p.completed_steps<p.total_steps
    AND p.available_steps>0 AND EXISTS (
     SELECT 1 FROM sasu.curriculum_items i JOIN sasu.watch_records w USING(content_id)
-    WHERE i.curriculum_id=p.curriculum_id AND w.user_id=:id)), '[]'::jsonb)
+    JOIN sasu.contents x USING(content_id)
+    WHERE i.curriculum_id=p.curriculum_id AND w.user_id=:id
+      AND x.status='PUBLISHED')), '[]'::jsonb)
    AS curriculums
 FROM sasu.user_settings s JOIN sasu.app_users u USING(user_id)
 WHERE s.user_id=:id AND u.role='LEARNER'

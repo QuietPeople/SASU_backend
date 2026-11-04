@@ -65,7 +65,7 @@ def build_content_summary(item: repository.Presentation, actor_id: int) -> Conte
             else None,
         },
         actor_id,
-        preview=content.status == ContentStatus.DRAFT,
+        preview=content.status != ContentStatus.PUBLISHED,
     )
 
 
@@ -283,8 +283,9 @@ def publish_content(
             _validate_publish(item, storage)
             if content.status != ContentStatus.PUBLISHED:
                 content.status = ContentStatus.PUBLISHED
-                content.published_at = datetime.now(UTC)
-                content.updated_at = content.published_at
+                now = datetime.now(UTC)
+                content.published_at = content.published_at or now
+                content.updated_at = now
                 session.flush()
             result = _editable(
                 item, actor_id, repository.related_curriculums(session, content_id), storage
@@ -292,3 +293,29 @@ def publish_content(
         return result
     except SQLAlchemyError as exc:
         raise ApiError(500, "INTERNAL_ERROR", "콘텐츠 공개 처리에 실패했습니다.") from exc
+
+
+def make_private(
+    session: Session, actor_id: int, content_id: int, storage: LocalVideoStorage
+) -> EditableContent:
+    try:
+        with session.begin():
+            require_admin(session, actor_id)
+            content = repository.get_content_for_update(session, content_id)
+            if content is None:
+                raise ApiError(404, "CONTENT_NOT_FOUND", "콘텐츠가 없습니다.")
+            if content.status == ContentStatus.DRAFT:
+                raise ApiError(
+                    409, "CONTENT_NOT_PUBLISHED", "작성 중인 초안은 비공개 전환할 수 없습니다."
+                )
+            if content.status != ContentStatus.PRIVATE:
+                content.status = ContentStatus.PRIVATE
+                content.updated_at = datetime.now(UTC)
+                session.flush()
+            item = repository.load_presentations(session, [content])[0]
+            result = _editable(
+                item, actor_id, repository.related_curriculums(session, content_id), storage
+            )
+        return result
+    except SQLAlchemyError as exc:
+        raise ApiError(500, "INTERNAL_ERROR", "콘텐츠 비공개 처리에 실패했습니다.") from exc
