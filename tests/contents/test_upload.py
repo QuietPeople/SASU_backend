@@ -449,3 +449,5 @@ def test_video_policy_reports_upload_limits(upload_context):
     assert body["max_bytes"] == 200 * 1024 * 1024
     assert (body["min_duration_sec"], body["max_duration_sec"]) == (1.0, 180.0)
     assert ".mp4" in body["accept"]
+    assert body["max_long_edge_px"] == 3840
+    assert body["target_long_edge_px"] == 2160

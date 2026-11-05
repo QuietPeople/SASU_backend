@@ -1,4 +1,4 @@
-"""ffprobe·ffmpeg 실행. 업로드 영상의 판별·분석과 재인코딩 없는 정규화(remux)를 담당한다.
+"""ffprobe·ffmpeg 실행. 업로드 영상의 분석·정규화와 해상도 축소를 담당한다.
 
 브라우저가 보낸 Content-Type과 확장자는 믿지 않는다.
 1) 파일 앞부분 바이트로 컨테이너 계열을 먼저 거르고(텍스트·이미지·재생목록 차단)
@@ -46,6 +46,10 @@ class ProbeResult:
     rotation: int  # 0/90/180/270. 휴대폰 세로 촬영 판별용
     audio_codec: str | None
     frame_rate: float | None
+    video_stream_index: int = 0
+    audio_stream_index: int | None = None
+    pixel_format: str | None = None
+    profile: str | None = None
 
     @property
     def display_width(self) -> int:
@@ -161,7 +165,19 @@ def probe(path: Path, *, timeout: float = 20.0) -> ProbeResult:
         frame_rate=(
             _parse_rate(video.get("avg_frame_rate")) or _parse_rate(video.get("r_frame_rate"))
         ),
+        video_stream_index=int(video["index"]),
+        audio_stream_index=int(audios[0]["index"]) if audios else None,
+        pixel_format=video.get("pix_fmt"),
+        profile=video.get("profile"),
     )
+
+
+def _stream_mapping(streams: ProbeResult) -> list[str]:
+    # ffprobe에서 검사한 절대 스트림 번호를 사용한다. 표지 이미지 등은 선택하지 않는다.
+    mapping = ["-map", f"0:{streams.video_stream_index}"]
+    if streams.audio_stream_index is not None:
+        mapping += ["-map", f"0:{streams.audio_stream_index}"]
+    return mapping
 
 
 def scale_and_remux(
@@ -172,6 +188,7 @@ def scale_and_remux(
     transcode_audio: bool,
     long_edge: int,
     timeout: float,
+    streams: ProbeResult,
 ) -> None:
     """고해상도 영상을 long_edge px 이하로 축소하며 컨테이너를 다시 쓴다.
     비율·회전 메타데이터를 유지하고 짝수 픽셀로 보정한다."""
@@ -189,12 +206,12 @@ def scale_and_remux(
         "-y",
         "-protocol_whitelist",
         "file",
+        "-xerror",
+        "-err_detect",
+        "explode",
         "-i",
         str(src),
-        "-map",
-        "0:v:0",
-        "-map",
-        "0:a:0?",
+        *_stream_mapping(streams),
         "-map_metadata",
         "-1",
         "-vf",
@@ -205,7 +222,18 @@ def scale_and_remux(
         cmd += ["-c:a", "aac", "-b:a", "128k"] if transcode_audio else ["-c:a", "copy"]
         cmd += ["-movflags", "+faststart", "-f", "mp4"]
     else:
-        cmd += ["-c:v", "libvpx-vp9", "-crf", "30", "-b:v", "0", "-deadline", "good", "-cpu-used", "4"]
+        cmd += [
+            "-c:v",
+            "libvpx-vp9",
+            "-crf",
+            "30",
+            "-b:v",
+            "0",
+            "-deadline",
+            "good",
+            "-cpu-used",
+            "4",
+        ]
         cmd += ["-c:a", "libopus"] if transcode_audio else ["-c:a", "copy"]
         cmd += ["-f", "webm"]
     cmd.append(str(dst))
@@ -223,7 +251,13 @@ def scale_and_remux(
 
 
 def remux(
-    src: Path, dst: Path, *, output_format: str, transcode_audio: bool, timeout: float
+    src: Path,
+    dst: Path,
+    *,
+    output_format: str,
+    transcode_audio: bool,
+    timeout: float,
+    streams: ProbeResult,
 ) -> None:
     """영상은 복사만 하고 컨테이너를 다시 쓴다. output_format은 'mp4' 또는 'webm'."""
     cmd = [
@@ -235,13 +269,12 @@ def remux(
         "-y",
         "-protocol_whitelist",
         "file",
+        "-xerror",
+        "-err_detect",
+        "explode",
         "-i",
         str(src),
-        # 첫 영상·첫 음성만 남긴다. 자막·타임코드·데이터 트랙은 재생 오류의 원인이 된다.
-        "-map",
-        "0:v:0",
-        "-map",
-        "0:a:0?",
+        *_stream_mapping(streams),
         # 촬영 위치(GPS)·기기 정보 등 전역 메타데이터 제거. 회전 정보는 영상 스트림에 남는다.
         "-map_metadata",
         "-1",
@@ -267,3 +300,35 @@ def remux(
         # 서버 경로가 담길 수 있어 응답에는 넣지 않고 로그로만 남긴다.
         logger.error("ffmpeg remux failed: %s", proc.stderr.decode(errors="replace")[-500:])
         raise ProcessingFailed("영상을 저장 형식으로 변환하지 못했습니다.")
+
+
+def validate_decoding(path: Path, streams: ProbeResult, *, timeout: float) -> None:
+    """저장할 영상·음성을 끝까지 디코딩한다. 파일 출력 없이 손상·시간 초과를 거절한다."""
+    cmd = [
+        _binary("ffmpeg"),
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-xerror",
+        "-err_detect",
+        "explode",
+        "-protocol_whitelist",
+        "file",
+        "-i",
+        str(path),
+        *_stream_mapping(streams),
+        "-f",
+        "null",
+        "-",
+    ]
+    try:
+        proc = subprocess.run(
+            cmd, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout, check=False
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ProbeTimeout("영상 디코딩 검사 제한 시간을 초과했습니다.") from exc
+    if proc.returncode != 0:
+        raise ProbeFailed(
+            "영상 또는 음성 프레임을 읽을 수 없습니다. 손상되지 않은 파일을 올려 주세요."
+        )

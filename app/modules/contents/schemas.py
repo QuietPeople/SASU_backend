@@ -181,6 +181,9 @@ class VideoPolicyOut(ApiModel):
     max_bytes: int
     min_duration_sec: float
     max_duration_sec: float
-    max_long_edge_px: int
+    max_long_edge_px: int = Field(description="입력 영상의 긴 변 상한(포함). 기본 3840px.")
+    target_long_edge_px: int = Field(
+        description="자동 축소 후 저장할 긴 변 목표. 작은 영상은 확대하지 않음."
+    )
     accept: str
     formats: list[str]

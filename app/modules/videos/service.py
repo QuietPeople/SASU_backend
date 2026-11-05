@@ -17,10 +17,24 @@ from enum import StrEnum
 from pathlib import Path
 from typing import BinaryIO
 
-from app.integrations.ffmpeg import ProbeResult, probe, remux, scale_and_remux, sniff_container
+from app.integrations.ffmpeg import (
+    ProbeResult,
+    probe,
+    remux,
+    scale_and_remux,
+    sniff_container,
+    validate_decoding,
+)
 from app.integrations.storage import LocalVideoStorage
 
-from .errors import DurationOutOfRange, EmptyFile, FileTooLarge, ProcessingFailed, UnsupportedMedia
+from .errors import (
+    DurationOutOfRange,
+    EmptyFile,
+    FileTooLarge,
+    ProcessingFailed,
+    ResolutionOutOfRange,
+    UnsupportedMedia,
+)
 from .policy import VideoPolicy
 
 logger = logging.getLogger(__name__)
@@ -108,6 +122,28 @@ def sanitize_original_name(name: str | None) -> str:
     return (name or "video")[:255]
 
 
+# 코덱 이름만 같아도 고비트·4:2:2·4:4:4 프로필은 재생 환경이 다르므로
+# 현재 업로드 계약은 8비트 4:2:0 형식으로 한정한다. 호환성 변환은 별도 기능이다.
+def _verify_playback_format(info: ProbeResult) -> None:
+    profiles = {
+        "h264": {"Constrained Baseline", "Baseline", "Main", "High"},
+        "vp8": {None, "0"},
+        "vp9": {"Profile 0"},
+        "av1": {"Main"},
+    }
+    if info.video_codec not in profiles:
+        return  # 기존 코덱 검사에서 구체적인 변환 안내를 제공한다.
+    if (
+        info.pixel_format not in {"yuv420p", "yuvj420p"}
+        or info.profile not in profiles[info.video_codec]
+    ):
+        raise UnsupportedMedia(
+            "지원하지 않는 영상 픽셀 형식 또는 프로필입니다. "
+            "8비트 H.264(YUV 4:2:0)로 내보내 주세요.",
+            detail={"pixel_format": info.pixel_format, "profile": info.profile},
+        )
+
+
 def decide_plan(container: str, info: ProbeResult, policy: VideoPolicy) -> NormalizePlan:
     """정책 검사. 통과하면 저장 계획을, 아니면 예외를 낸다."""
     if not policy.min_duration_sec <= info.duration_sec <= policy.max_duration_sec:
@@ -123,11 +159,18 @@ def decide_plan(container: str, info: ProbeResult, policy: VideoPolicy) -> Norma
     if info.width <= 0 or info.height <= 0:
         raise UnsupportedMedia("영상 해상도를 확인할 수 없습니다.")
 
-    # BE-01: 긴 변이 정책 한계를 넘으면 재인코딩으로 자동 축소한다.
-    scale_to: int | None = None
     if max(info.width, info.height) > policy.max_long_edge_px:
-        scale_to = policy.max_long_edge_px
+        raise ResolutionOutOfRange(
+            f"영상의 긴 변은 {policy.max_long_edge_px}px 이하여야 합니다.",
+            detail={"max_long_edge_px": policy.max_long_edge_px},
+        )
 
+    # 입력 제한을 통과한 영상 중 저장 목표보다 큰 영상만 축소한다.
+    scale_to: int | None = None
+    if max(info.width, info.height) > policy.target_long_edge_px:
+        scale_to = policy.target_long_edge_px
+
+    _verify_playback_format(info)
     video, audio = info.video_codec, info.audio_codec
     if video in policy.mp4_video_codecs:
         # MP4·MOV·MKV 안의 H.264 → MP4로 다시 감싼다(재인코딩 없음).
@@ -197,7 +240,7 @@ class VideoIngestService:
             raise
         return tmp, digest.hexdigest(), head
 
-    def normalize(self, src: Path, plan: NormalizePlan) -> Path:
+    def normalize(self, src: Path, plan: NormalizePlan, streams: ProbeResult) -> Path:
         dst = self.storage.temp_file(plan.output.ext)
         if plan.scale_to is not None:
             scale_and_remux(
@@ -207,6 +250,7 @@ class VideoIngestService:
                 transcode_audio=plan.transcode_audio,
                 long_edge=plan.scale_to,
                 timeout=self.policy.scale_timeout_sec,
+                streams=streams,
             )
         else:
             remux(
@@ -215,6 +259,7 @@ class VideoIngestService:
                 output_format=plan.output.value,
                 transcode_audio=plan.transcode_audio,
                 timeout=self.policy.remux_timeout_sec,
+                streams=streams,
             )
         return dst
 
@@ -225,9 +270,15 @@ class VideoIngestService:
             container = sniff_container(head)
             info = probe(upload, timeout=self.policy.probe_timeout_sec)
             plan = decide_plan(container, info, self.policy)
-            normalized = self.normalize(upload, plan)
+            normalized = self.normalize(upload, plan, info)
+            if normalized.stat().st_size > self.policy.max_bytes:
+                raise FileTooLarge(
+                    f"변환된 영상이 최대 용량 {self.policy.max_megabytes}MB를 초과했습니다.",
+                    detail={"max_bytes": self.policy.max_bytes},
+                )
             final = probe(normalized, timeout=self.policy.probe_timeout_sec)
             _verify_normalized(info, final, plan, self.policy)  # BE-02
+            validate_decoding(normalized, final, timeout=self.policy.remux_timeout_sec)
             asset_id = uuid.uuid4()
             relative_path = self.storage.new_relative_path(asset_id, plan.output.ext)
             stored = self.storage.commit(normalized, relative_path)
@@ -256,9 +307,19 @@ def _verify_normalized(
     plan: NormalizePlan,
     policy: VideoPolicy,
 ) -> None:
-    """BE-02: 정규화 결과를 재검증한다. 유효 치수·재생 호환 코덱·길이 오차 5% 이내를 확인한다."""
+    """저장본의 허용 조건과 원본 대비 트랙·길이 보존 여부를 검사한다."""
     if result.width <= 0 or result.height <= 0:
         raise ProcessingFailed("정규화 후 영상 해상도를 읽을 수 없습니다.")
+    if max(result.width, result.height) > policy.target_long_edge_px:
+        raise ProcessingFailed("변환된 영상이 허용 해상도를 초과했습니다.")
+    if not policy.min_duration_sec <= result.duration_sec <= policy.max_duration_sec:
+        raise DurationOutOfRange(
+            f"변환된 영상 길이는 {policy.min_duration_sec:g}초 이상 "
+            f"{policy.max_duration_sec:g}초 이하여야 합니다.",
+            detail={"duration_sec": result.duration_sec},
+        )
+    if (original.audio_codec is None) != (result.audio_codec is None):
+        raise ProcessingFailed("변환 전후의 음성 트랙 구성이 다릅니다.")
 
     if plan.output == OutputKind.MP4:
         ok_video, ok_audio = policy.mp4_video_codecs, policy.mp4_audio_codecs
@@ -273,6 +334,8 @@ def _verify_normalized(
         raise ProcessingFailed(
             f"정규화 후 음성 코덱 {result.audio_codec!r}이(가) 재생 허용 목록에 없습니다."
         )
+
+    _verify_playback_format(result)
 
     if original.duration_sec > 0:
         delta = abs(result.duration_sec - original.duration_sec) / original.duration_sec

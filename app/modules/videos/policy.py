@@ -8,7 +8,8 @@ class VideoPolicy:
     max_bytes: int = 200 * 1024 * 1024
     min_duration_sec: float = 1.0
     max_duration_sec: float = 180.0
-    max_long_edge_px: int = 2160
+    max_long_edge_px: int = 3840  # 입력: 긴 변 3840px 이하
+    target_long_edge_px: int = 2160  # 저장본: 초과하는 입력만 비율을 유지해 축소
 
     # 브라우저(Chrome·Edge·Safari·Firefox) 공통 재생이 되는 조합만 받는다.
     #   MP4 계열: 영상 H.264 + 음성 AAC/MP3 → MP4(faststart)로 저장
@@ -18,9 +19,7 @@ class VideoPolicy:
     webm_video_codecs: frozenset[str] = field(
         default_factory=lambda: frozenset({"vp8", "vp9", "av1"})
     )
-    webm_audio_codecs: frozenset[str] = field(
-        default_factory=lambda: frozenset({"opus", "vorbis"})
-    )
+    webm_audio_codecs: frozenset[str] = field(default_factory=lambda: frozenset({"opus", "vorbis"}))
     # MP4 계열인데 음성만 맞지 않으면(휴대폰 MOV의 PCM 등) 음성만 AAC로 다시 인코딩한다.
     # 영상 재인코딩보다 훨씬 가벼워 요청 안에서 처리할 수 있다.
     transcode_incompatible_audio: bool = True
