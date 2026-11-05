@@ -397,3 +397,35 @@ def test_database_failures_are_not_successful_empty_results(client, users, monke
     assert response.status_code == 500
     assert response.json()["detail"]["code"] == "INTERNAL_ERROR"
     assert "private" not in response.text and "secret" not in response.text
+
+
+def test_batch_responses_preserve_order_history_and_ownership(
+    client, database, users, question, monkeypatch
+):
+    from app.core.security import Actor
+    from app.modules.questions.schemas import QuestionVersion
+    from app.modules.responses.service import build_detail, get_response
+
+    own = [add_response(database, users, question, result="WRONG") for _ in range(20)]
+    other = add_response(database, users, question, username="other")
+    actor = Actor(users["learner"]["user_id"], "LEARNER")
+    ids = [item["response_id"] for item in reversed(own)]
+    expected = [get_response(database, item, actor).model_dump() for item in ids]
+    original_execute = database.execute
+    calls = []
+
+    def execute(*args, **kwargs):
+        calls.append(args[0])
+        return original_execute(*args, **kwargs)
+
+    monkeypatch.setattr(database, "execute", execute)
+    rows = list(
+        responses_repository.list_response_rows(
+            database, [ids[0], other["response_id"], *ids[1:]], actor
+        )
+    )
+    assert len(calls) == 1
+    actual = [build_detail(row, QuestionVersion.model_validate(row)).model_dump() for row in rows]
+    assert actual == expected
+    assert responses_repository.list_response_rows(database, [], actor) == []
+    assert len(calls) == 1
