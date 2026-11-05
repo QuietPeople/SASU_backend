@@ -60,6 +60,7 @@ def test_openapi_documents_operations_and_temporary_integrations(client):
     listing = paths["/api/users/{user_id}/saved-contents"]["get"]
     assert listing["operationId"] == "API-SAV-03"
     assert {p["name"] for p in listing["parameters"] if p["in"] == "query"} == {
+        "q",
         "category_id",
         "page",
         "size",

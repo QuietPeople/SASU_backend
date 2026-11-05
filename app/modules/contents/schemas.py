@@ -32,6 +32,7 @@ class InputModel(ApiModel):
 
 
 class ContentListQuery(InputModel, PageQuery):
+    missing: Literal["video", "learning_material", "either"] | None = None
     q: Annotated[str, Field(max_length=200)] | None = None
     category_id: ResourceId | None = None
     status: Literal["DRAFT", "PUBLISHED", "ALL"] | None = Field(
@@ -89,7 +90,9 @@ class ContentCreate(ContentFields):
 
 
 class ContentUpdate(ContentFields):
-    """전달 필드만 model_dump(exclude_unset=True)로 수정 서비스에 넘긴다."""
+    """편집 조회 시각을 전달하면 오래된 저장을 거절한다."""
+
+    expected_updated_at: AwareDatetime | None = None
 
     tag_ids: list[StrictResourceId] = Field(
         default_factory=list, description="생략 시 유지. 전달하면 전체 교체, []는 모두 해제."
@@ -100,7 +103,7 @@ class ContentUpdate(ContentFields):
 
     @model_validator(mode="after")
     def require_changes(self) -> Self:
-        if not self.model_fields_set:
+        if not self.model_fields_set - {"expected_updated_at"}:
             raise ValueError("변경할 필드를 최소 1개 전달해야 합니다.")
         return self
 

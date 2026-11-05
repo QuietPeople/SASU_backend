@@ -5,8 +5,8 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.api.schemas import Page
-from app.core.exceptions import ApiError
+from app.api.schemas import Page, page_offset
+from app.core.exceptions import ApiError, check_edit_version
 from app.core.security import Actor
 from app.modules.contents.presentation import build_summary
 from app.modules.curricula import repository
@@ -77,6 +77,12 @@ def make_summary(curriculum, steps: list[CurriculumStep], user_id: int | None) -
         if steps and completed is not None
         else None
     )
+    return summary_from_counts(
+        curriculum, len(steps), sum(step.available for step in steps), completed, percent
+    )
+
+
+def summary_from_counts(curriculum, count, available, completed, percent):
     thumbnail_url = (
         f"/api/curriculums/{curriculum['curriculum_id']}/thumbnail"
         if curriculum.get("thumbnail_image_id") is not None
@@ -86,11 +92,12 @@ def make_summary(curriculum, steps: list[CurriculumStep], user_id: int | None) -
         curriculum_id=curriculum["curriculum_id"],
         title=curriculum["title"],
         description=curriculum["description"],
-        total_steps=len(steps),
-        available_steps=sum(step.available for step in steps),
+        total_steps=count,
+        available_steps=available,
         completed_steps=completed,
         progress_percent=percent,
         thumbnail_url=thumbnail_url,
+        updated_at=curriculum.get("updated_at"),
     )
 
 
@@ -114,19 +121,29 @@ def get_detail(
 def get_list(session: Session, query: CurriculumListQuery, actor: Actor) -> Page[CurriculumSummary]:
     user_id = target_user(session, query, actor)
     curricula = repository.list_curricula(session)
-    grouped = defaultdict(list)
-    for row in repository.load_steps(session, [c["curriculum_id"] for c in curricula], user_id):
-        grouped[row["curriculum_id"]].append(make_step(row, user_id, query.view, actor.user_id))
-    summaries = [make_summary(c, grouped[c["curriculum_id"]], user_id) for c in curricula]
-    if query.view == "learner":
-        summaries = [summary for summary in summaries if summary.available_steps > 0]
-    start = (query.page - 1) * query.size
+    counts = defaultdict(lambda: [0, 0, 0])
+    for row in repository.list_step_states(session, user_id):
+        state = counts[row["curriculum_id"]]
+        state[0] += 1
+        state[1] += row["status"] == "PUBLISHED" and is_video_row_available(row)
+        state[2] += int(row["completed"])
+    eligible = [c for c in curricula if query.view == "editor" or counts[c["curriculum_id"]][1]]
+    start = page_offset(query.page, query.size)
+    summaries = []
+    for curriculum in eligible[start : start + query.size]:
+        total, available, completed = counts[curriculum["curriculum_id"]]
+        percent = float(round(Decimal(completed) * 100 / total, 2)) if total and user_id else None
+        summaries.append(
+            summary_from_counts(
+                curriculum, total, available, completed if user_id else None, percent
+            )
+        )
     return Page[CurriculumSummary](
-        items=summaries[start : start + query.size],
+        items=summaries,
         page=query.page,
         size=query.size,
-        total=len(summaries),
-        has_next=query.page * query.size < len(summaries),
+        total=len(eligible),
+        has_next=query.page * query.size < len(eligible),
     )
 
 
@@ -146,6 +163,7 @@ def patch_curriculum(session: Session, curriculum_id: int, request: CurriculumPa
         current = repository.find_curriculum(session, curriculum_id, lock=True)
         if current is None:
             raise ApiError(404, "CURRICULUM_NOT_FOUND", "커리큘럼을 찾을 수 없습니다.")
+        check_edit_version(request.expected_updated_at, current["updated_at"])
         title = request.title if "title" in request.model_fields_set else current["title"]
         description = (
             request.description
@@ -167,14 +185,18 @@ def save_steps(
     try:
         if len(set(request.content_ids)) != len(request.content_ids):
             raise ApiError(422, "DUPLICATE_CONTENT", "같은 영상을 중복 편성할 수 없습니다.")
-        if repository.find_curriculum(session, curriculum_id, lock=True) is None:
+        current = repository.find_curriculum(session, curriculum_id, lock=True)
+        if current is None:
             raise ApiError(404, "CURRICULUM_NOT_FOUND", "커리큘럼을 찾을 수 없습니다.")
+        check_edit_version(request.expected_updated_at, current["updated_at"])
         if len(repository.lock_contents(session, request.content_ids)) != len(request.content_ids):
             raise ApiError(404, "CONTENT_NOT_FOUND", "편성할 콘텐츠를 찾을 수 없습니다.")
         repository.replace_steps(session, curriculum_id, request.content_ids)
         result = get_detail(session, curriculum_id, CurriculumQuery(view="editor"), actor)
         session.commit()
-        return CurriculumSteps(items=result.steps, total_steps=len(result.steps))
+        return CurriculumSteps(
+            updated_at=result.summary.updated_at, items=result.steps, total_steps=len(result.steps)
+        )
     except Exception:
         session.rollback()
         raise

@@ -344,7 +344,9 @@ def test_reordering_preserves_step_ids_and_exclusion_keeps_content(client, recor
         client.put(path, headers=headers(records), json={"content_ids": [ids[1]]}).status_code
         == 200
     )
-    assert client.put(path, headers=headers(records), json={"content_ids": []}).json() == {
+    cleared = client.put(path, headers=headers(records), json={"content_ids": []}).json()
+    assert cleared.pop("updated_at")
+    assert cleared == {
         "items": [],
         "total_steps": 0,
     }
@@ -497,3 +499,53 @@ def test_unsafe_symlink_is_not_available_to_learner(client, records, database, t
 def test_management_requires_admin(client, records, method, path, body):
     response = client.request(method, path, headers=headers(records, "user1"), json=deepcopy(body))
     assert response.status_code == 403
+
+
+def test_duplicate_option_positions_and_missing_material_filter(client, records):
+    content_id = records["contents"][0]
+    body = question_body()
+    body["options"][1]["option_text"] = "  보기1  "
+    h = headers(records)
+    error = client.post(f"/api/contents/{content_id}/question", headers=h, json=body)
+    assert error.status_code == 422
+    assert {field["field"] for field in error.json()["detail"]["fields"]} == {
+        "options[0].option_text",
+        "options[1].option_text",
+    }
+    register(client, records)
+    path = "/api/contents?missing=learning_material&size=1"
+    page = client.get(path, headers=h).json()
+    assert page["total"] == 3 and page["has_next"]
+    assert client.get(path, headers=headers(records, "user1")).status_code == 403
+    counts = client.get("/api/categories/counts", headers=h).json()["items"][0]
+    assert (counts["total_count"], counts["published_count"], counts["draft_count"]) == (4, 3, 1)
+
+
+def test_stale_edit_cannot_overwrite_content_or_steps(client, records):
+    h = headers(records)
+    path = f"/api/contents/{records['contents'][2]}"
+    original = client.get(path + "?view=editor", headers=h).json()["updated_at"]
+    payload = {"title": "수정", "expected_updated_at": original}
+    assert client.patch(path, headers=h, json=payload).status_code == 200
+    assert client.patch(path, headers=h, json=payload).status_code == 409
+    path = f"/api/curriculums/{create_course(client, records)}"
+    version = client.get(path + "?view=editor", headers=h).json()["summary"]["updated_at"]
+    steps = client.put(
+        path + "/steps",
+        headers=h,
+        json={"content_ids": records["contents"][:2], "expected_updated_at": version},
+    )
+    assert steps.status_code == 200
+    assert steps.json()["updated_at"] != version
+    assert (
+        client.patch(
+            path, headers=h, json={"title": "stale", "expected_updated_at": version}
+        ).status_code
+        == 409
+    )
+    assert (
+        client.put(
+            path + "/steps", headers=h, json={"content_ids": [], "expected_updated_at": version}
+        ).status_code
+        == 409
+    )

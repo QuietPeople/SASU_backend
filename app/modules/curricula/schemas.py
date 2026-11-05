@@ -1,6 +1,6 @@
 """커리큘럼 API 계약. 단계 키는 과정 안의 content_id로 대응한다."""
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 from app.api.schemas import PageQuery, ViewQuery
 from app.core.types import PositiveId
@@ -23,6 +23,7 @@ class CurriculumInput(BaseModel):
 
 
 class CurriculumPatch(BaseModel):
+    expected_updated_at: AwareDatetime | None = Field(default=None, strict=False)
     model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
 
     title: str | None = Field(default=None, min_length=1, max_length=100)
@@ -30,18 +31,22 @@ class CurriculumPatch(BaseModel):
 
     @model_validator(mode="after")
     def validate_patch(self):
-        if not self.model_fields_set or ("title" in self.model_fields_set and self.title is None):
+        if not self.model_fields_set - {"expected_updated_at"} or (
+            "title" in self.model_fields_set and self.title is None
+        ):
             raise ValueError("변경할 필드가 필요하며 제목은 null로 비울 수 없습니다.")
         return self
 
 
 class StepsInput(BaseModel):
+    expected_updated_at: AwareDatetime | None = Field(default=None, strict=False)
     model_config = ConfigDict(extra="forbid", strict=True)
 
     content_ids: list[PositiveId]
 
 
 class CurriculumSummary(BaseModel):
+    updated_at: AwareDatetime | None = None
     curriculum_id: int
     title: str
     description: str | None
@@ -72,6 +77,7 @@ class CurriculumDetail(BaseModel):
 
 
 class CurriculumSteps(BaseModel):
+    updated_at: AwareDatetime | None = None
     items: list[CurriculumStep]
     total_steps: int
 

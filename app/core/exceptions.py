@@ -116,3 +116,8 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ApiError, api_error_handler)
     app.add_exception_handler(SQLAlchemyError, internal_error_handler)
     app.add_exception_handler(Exception, internal_error_handler)
+
+
+def check_edit_version(expected, current) -> None:
+    if expected is not None and expected != current:
+        raise ApiError(409, "EDIT_CONFLICT", "다른 편집이 저장되었습니다. 새로 조회해 주세요.")

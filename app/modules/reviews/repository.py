@@ -3,7 +3,7 @@
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.core.types import MAX_BIGINT
+from app.api.schemas import page_offset
 
 CURRENT_QUESTION = """
     FROM sasu.contents c
@@ -18,6 +18,7 @@ CARD_COLUMNS = """
 """
 CATEGORY_FILTER = """
     c.status = 'PUBLISHED'
+    AND (:q = '' OR strpos(lower(c.title), lower(:q)) > 0)
     AND (CAST(:category AS bigint) IS NULL OR c.category_id = CAST(:category AS bigint))
 """
 
@@ -43,7 +44,7 @@ def _page(session, source, order, params, page, size, *, columns="", joins=""):
                 {joins}
                 ORDER BY {order}"""
             ),
-            {**params, "limit": size, "offset": min((page - 1) * size, MAX_BIGINT)},
+            {**params, "limit": size, "offset": page_offset(page, size)},
         )
         .mappings()
         .all()
@@ -81,7 +82,13 @@ def list_wrong_answers(session: Session, user_id: int, epoch: int, status: str, 
         session,
         source,
         "item.last_wrong_at DESC, item.question_version_id ASC",
-        {"category": query.category_id, "user": user_id, "epoch": epoch, "status": status},
+        {
+            "q": query.q.strip(),
+            "category": query.category_id,
+            "user": user_id,
+            "epoch": epoch,
+            "status": status,
+        },
         query.page,
         query.size,
         columns=columns,
@@ -95,7 +102,7 @@ def list_flashcards(session: Session, query):
         session,
         source,
         "item.published_at DESC, item.content_id ASC",
-        {"category": query.category_id},
+        {"q": query.q.strip(), "category": query.category_id},
         query.page,
         query.size,
     )

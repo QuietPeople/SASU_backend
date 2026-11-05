@@ -15,6 +15,7 @@ class SaveState(BaseModel):
 
 
 class SavedContentsQuery(PageQuery):
+    q: str = Field(default="", max_length=200)
     category_id: PositiveId | None = None
 
 

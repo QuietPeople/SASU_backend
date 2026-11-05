@@ -26,3 +26,8 @@ class Page(BaseModel, Generic[T]):
     size: int
     total: int
     has_next: bool
+
+
+def page_offset(page: int, size: int) -> int:
+    """Keep out-of-range pages empty without overflowing PostgreSQL bigint."""
+    return min((page - 1) * size, 2**63 - 1 - size)

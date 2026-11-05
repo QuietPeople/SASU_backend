@@ -148,3 +148,21 @@ def related_to_content(session: Session, content_id: int) -> list[dict]:
         .order_by(curricula.c.curriculum_id)
     )
     return [dict(row._mapping) for row in rows]
+
+
+def list_step_states(session: Session, user_id: int | None):
+    return session.execute(
+        text("""
+        SELECT i.curriculum_id, c.status, asset.storage_path, asset.size_bytes,
+               asset.mime_type, asset.duration_seconds,
+               (w.completed_at IS NOT NULL AND EXISTS (
+                    SELECT 1 FROM sasu.quizzes q JOIN sasu.quiz_attempts a USING (quiz_id)
+                    JOIN sasu.quiz_responses r USING (attempt_id)
+                    WHERE q.content_id=c.content_id AND a.user_id=:user AND r.result='CORRECT'
+               )) AS completed
+        FROM sasu.curriculum_items i JOIN sasu.contents c USING(content_id)
+        LEFT JOIN sasu.video_assets asset USING(video_asset_id)
+        LEFT JOIN sasu.watch_records w ON w.content_id=c.content_id AND w.user_id=:user
+    """),
+        {"user": user_id},
+    ).mappings()

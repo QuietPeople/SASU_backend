@@ -15,6 +15,10 @@ def get_response(session: Session, response_id: int, actor: Actor) -> ResponseDe
     if record is None:
         raise ApiError(404, "RESPONSE_NOT_FOUND", "응답을 찾을 수 없습니다.")
     version = get_version(session, record["question_id"], record["question_version_id"])
+    return build_detail(record, version)
+
+
+def build_detail(record, version):
     correct = next(option for option in version.options if option.is_correct)
     question = LearnerQuestion(
         question_id=version.question_id,

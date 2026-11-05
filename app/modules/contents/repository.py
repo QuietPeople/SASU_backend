@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from sqlalchemy import case, delete, func, literal, or_, select
 from sqlalchemy.orm import Session
 
+from app.api.schemas import page_offset
 from app.modules.categories.models import Category
 from app.modules.contents.models import Content, ContentTag, ImageAsset, VideoAsset
 from app.modules.contents.schemas import ContentListQuery
@@ -77,6 +78,21 @@ def list_contents(
         statement = statement.where(Content.status == status)
     if query.category_id is not None:
         statement = statement.where(Content.category_id == query.category_id)
+    if query.missing:
+        video = Content.video_asset_id.is_(None)
+        material = (
+            ~select(quizzes.c.content_id)
+            .where(
+                quizzes.c.content_id == Content.content_id,
+                quizzes.c.current_version_id.is_not(None),
+            )
+            .exists()
+        )
+        statement = statement.where(
+            {"video": video, "learning_material": material, "either": or_(video, material)}[
+                query.missing
+            ]
+        )
     ordering = []
     if query.q:
         title_match = Content.title.icontains(query.q, autoescape=True)
@@ -96,7 +112,7 @@ def list_contents(
     total = session.scalar(select(func.count()).select_from(statement.subquery()))
     statement = (
         statement.order_by(*ordering, Content.published_at.desc().nulls_last(), Content.content_id)
-        .offset((query.page - 1) * query.size)
+        .offset(page_offset(query.page, query.size))
         .limit(query.size)
     )
     return list(session.scalars(statement)), total

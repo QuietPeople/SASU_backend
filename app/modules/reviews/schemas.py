@@ -12,6 +12,7 @@ from app.modules.questions.schemas import LearnerQuestion
 
 
 class ReviewListQuery(PageQuery):
+    q: str = Field(default="", max_length=200)
     category_id: PositiveId | None = None
 
 

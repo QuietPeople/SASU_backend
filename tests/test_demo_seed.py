@@ -89,9 +89,11 @@ def test_schema_migration_does_not_insert_demo_data(database):
     config = Config(str(PROJECT_ROOT / "alembic.ini"))
     config.attributes["connection"] = database
     command.upgrade(config, "head")
-    assert database.scalar(text("SELECT version_num FROM alembic_version")) == "0001_initial_schema"
+    assert (
+        database.scalar(text("SELECT version_num FROM alembic_version")) == "0003_event_retry_keys"
+    )
     names = database.scalars(text("SELECT tablename FROM pg_tables WHERE schemaname='sasu'")).all()
-    assert len(names) == 21
+    assert len(names) == 23
     for name in names:
         assert database.scalar(text(f"SELECT count(*) FROM sasu.{name}")) == 0
 
@@ -403,9 +405,13 @@ def test_original_video_bundle_is_copied_and_connected_atomically(
 
 
 def stored_video_files(database, server):
-    rows = database.execute(
-        text("SELECT storage_path, size_bytes FROM sasu.video_assets ORDER BY storage_path")
-    ).mappings().all()
+    rows = (
+        database.execute(
+            text("SELECT storage_path, size_bytes FROM sasu.video_assets ORDER BY storage_path")
+        )
+        .mappings()
+        .all()
+    )
     for row in rows:
         path = server / row["storage_path"]
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -442,12 +448,16 @@ def test_replaced_video_uses_current_database_metadata_and_ignores_old_asset(
     apply_seed(database, seed_sql)
     server = tmp_path / "server"
     stored_video_files(database, server)
-    old = database.execute(
-        text(
-            "SELECT c.content_id, a.* FROM sasu.contents c "
-            "JOIN sasu.video_assets a USING(video_asset_id) ORDER BY c.content_id LIMIT 1"
+    old = (
+        database.execute(
+            text(
+                "SELECT c.content_id, a.* FROM sasu.contents c "
+                "JOIN sasu.video_assets a USING(video_asset_id) ORDER BY c.content_id LIMIT 1"
+            )
         )
-    ).mappings().one()
+        .mappings()
+        .one()
+    )
     replacement_id = uuid4()
     new_path = server / "replacement.mp4"
     new_path.write_bytes(b"new media")
