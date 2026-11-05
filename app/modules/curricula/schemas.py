@@ -23,7 +23,7 @@ class CurriculumInput(BaseModel):
 
 
 class CurriculumPatch(BaseModel):
-    expected_updated_at: AwareDatetime | None = Field(default=None, strict=False)
+    expected_updated_at: AwareDatetime = Field(strict=False)
     model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
 
     title: str | None = Field(default=None, min_length=1, max_length=100)
@@ -39,7 +39,7 @@ class CurriculumPatch(BaseModel):
 
 
 class StepsInput(BaseModel):
-    expected_updated_at: AwareDatetime | None = Field(default=None, strict=False)
+    expected_updated_at: AwareDatetime = Field(strict=False)
     model_config = ConfigDict(extra="forbid", strict=True)
 
     content_ids: list[PositiveId]

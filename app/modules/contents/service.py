@@ -60,7 +60,7 @@ def build_content_summary(item: repository.Presentation, actor_id: int) -> Conte
             "watch_completed": item.watch_completed,
             "has_quiz": item.has_quiz,
             "status": content.status,
-            "thumbnail_url": f"/api/contents/{content.content_id}/thumbnail"
+            "thumbnail_image_id": item.thumbnail.image_asset_id
             if item.thumbnail is not None
             else None,
         },
@@ -247,7 +247,7 @@ def update_content(
             if content is None:
                 raise ApiError(404, "CONTENT_NOT_FOUND", "콘텐츠가 없습니다.")
             item = repository.load_presentations(session, [content])[0]
-            check_edit_version(data.expected_updated_at, content.updated_at)
+            check_edit_version(data.expected_updated_at, _utc(content.updated_at))
             changes = data.model_dump(exclude_unset=True, exclude={"expected_updated_at"})
             if "category_id" in changes:
                 item.category = _category(session, changes["category_id"])

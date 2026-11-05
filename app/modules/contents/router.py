@@ -31,6 +31,7 @@ from app.modules.contents.schemas import (
     ContentPage,
     ContentUpdate,
     EditableContent,
+    ThumbnailQuery,
     VideoInfo,
     VideoPolicyOut,
     VideoQuery,
@@ -48,6 +49,7 @@ router = APIRouter(
         500: {"model": ErrorResponse, "description": "서버 처리·DB 오류"},
     },
 )
+
 
 @router.get(
     "",
@@ -81,6 +83,7 @@ def video_policy(
         min_duration_sec=policy.min_duration_sec,
         max_duration_sec=policy.max_duration_sec,
         max_long_edge_px=policy.max_long_edge_px,
+        target_long_edge_px=policy.target_long_edge_px,
         accept="video/mp4,video/quicktime,video/webm,video/x-matroska,.mp4,.mov,.webm,.mkv",
         formats=[
             "MP4·MOV·MKV (H.264 영상, AAC·MP3 음성) → MP4로 저장",
@@ -230,7 +233,9 @@ def get_video(
         "교체 성공 후 구 파일을 삭제하며 기존 시청·풀이 기록은 유지합니다. "
         "서버가 파일 내용으로 형식을 판별하고(확장자·MIME 미사용) ffprobe로 코덱·길이·해상도를 "
         "검사한 뒤, 웹 재생용으로 정규화(MP4 faststart, 메타데이터 제거)해 저장합니다. "
-        "허용 조건은 GET /api/contents/video-policy로 확인합니다."
+        "허용 조건은 GET /api/contents/video-policy로 확인합니다. "
+        "클라이언트가 요청을 중단해도 시작된 서버 작업은 완료될 수 있습니다. "
+        "재시도 전 편집 상세를 조회해 media_revision과 현재 영상을 확인하세요."
     ),
 )
 async def upload_video(
@@ -291,15 +296,16 @@ async def upload_video(
     responses={
         413: {"model": ErrorResponse, "description": "이미지 용량 초과"},
         415: {"model": ErrorResponse, "description": "지원하지 않는 이미지 형식"},
+        422: {"model": ErrorResponse, "description": "손상되었거나 읽을 수 없는 이미지"},
     },
 )
-async def put_thumbnail(
+def put_thumbnail(
     content_id: ContentId,
     actor_id: ActorId,
     session: Annotated[Session, Depends(get_db)],
     file: Annotated[UploadFile, File(description="썸네일 이미지(JPEG·PNG·WebP, 최대 10MB)")],
 ):
-    data = await file.read()
+    data = thumbnail_service.read_upload(file.file)
     thumbnail_service.put_content_thumbnail(session, content_id, actor_id, data)
 
 
@@ -321,10 +327,17 @@ async def put_thumbnail(
 )
 def get_thumbnail(
     content_id: ContentId,
+    query: Annotated[ThumbnailQuery, Query()],
     session: Annotated[Session, Depends(get_db)],
 ):
-    data, mime = thumbnail_service.get_content_thumbnail(session, content_id)
-    return Response(content=data, media_type=mime, headers={"Cache-Control": "public, max-age=86400"})
+    data, mime = thumbnail_service.get_content_thumbnail(session, content_id, query)
+    return Response(
+        content=data,
+        media_type=mime,
+        headers={
+            "Cache-Control": "private, no-store" if query.preview else "public, max-age=86400"
+        },
+    )
 
 
 @router.delete(

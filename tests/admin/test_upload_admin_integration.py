@@ -6,6 +6,7 @@ from uuid import uuid4
 from sqlalchemy import text
 
 from app.core.config import get_settings
+from tests.edit_helpers import course_edit_body
 
 
 def payload(response, status=200):
@@ -105,7 +106,11 @@ def test_uploaded_content_connects_to_quiz_course_statistics_and_reset(client, d
     course_id = course["summary"]["curriculum_id"]
     steps = payload(
         client.put(
-            f"/api/curriculums/{course_id}/steps", headers=admin, json={"content_ids": [content_id]}
+            f"/api/curriculums/{course_id}/steps",
+            headers=admin,
+            json=course_edit_body(
+                client, f"/api/curriculums/{course_id}/steps", admin, {"content_ids": [content_id]}
+            ),
         )
     )
     assert steps["items"][0]["content_id"] == content_id

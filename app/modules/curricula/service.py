@@ -9,6 +9,7 @@ from app.api.schemas import Page, page_offset
 from app.core.exceptions import ApiError, check_edit_version
 from app.core.security import Actor
 from app.modules.contents.presentation import build_summary
+from app.modules.contents.urls import build_thumbnail_url
 from app.modules.curricula import repository
 from app.modules.curricula.schemas import (
     CurriculumDetail,
@@ -70,7 +71,13 @@ def make_step(row, user_id: int | None, view: str, actor_id: int) -> CurriculumS
     )
 
 
-def make_summary(curriculum, steps: list[CurriculumStep], user_id: int | None) -> CurriculumSummary:
+def make_summary(
+    curriculum,
+    steps: list[CurriculumStep],
+    user_id: int | None,
+    *,
+    preview_actor_id: int | None = None,
+) -> CurriculumSummary:
     completed = sum(bool(step.completed) for step in steps) if user_id is not None else None
     percent = (
         float(round(Decimal(completed) * 100 / len(steps), 2))
@@ -78,15 +85,25 @@ def make_summary(curriculum, steps: list[CurriculumStep], user_id: int | None) -
         else None
     )
     return summary_from_counts(
-        curriculum, len(steps), sum(step.available for step in steps), completed, percent
+        curriculum,
+        len(steps),
+        sum(step.available for step in steps),
+        completed,
+        percent,
+        preview_actor_id=preview_actor_id,
     )
 
 
-def summary_from_counts(curriculum, count, available, completed, percent):
-    thumbnail_url = (
-        f"/api/curriculums/{curriculum['curriculum_id']}/thumbnail"
-        if curriculum.get("thumbnail_image_id") is not None
-        else None
+def summary_from_counts(curriculum, count, available, completed, percent, *, preview_actor_id=None):
+    thumbnail_url = build_thumbnail_url(
+        "curriculums",
+        curriculum["curriculum_id"],
+        curriculum[
+            "resolved_thumbnail_image_id"
+            if preview_actor_id is not None
+            else "public_thumbnail_image_id"
+        ],
+        preview_actor_id=preview_actor_id,
     )
     return CurriculumSummary(
         curriculum_id=curriculum["curriculum_id"],
@@ -112,7 +129,12 @@ def get_detail(
         make_step(row, user_id, query.view, actor.user_id)
         for row in repository.load_steps(session, [curriculum_id], user_id)
     ]
-    summary = make_summary(curriculum, steps, user_id)
+    summary = make_summary(
+        curriculum,
+        steps,
+        user_id,
+        preview_actor_id=actor.user_id if query.view == "editor" else None,
+    )
     if query.view == "learner" and summary.available_steps == 0:
         raise ApiError(404, "CURRICULUM_NOT_FOUND", "이용 가능한 커리큘럼을 찾을 수 없습니다.")
     return CurriculumDetail(summary=summary, steps=steps)
@@ -135,7 +157,12 @@ def get_list(session: Session, query: CurriculumListQuery, actor: Actor) -> Page
         percent = float(round(Decimal(completed) * 100 / total, 2)) if total and user_id else None
         summaries.append(
             summary_from_counts(
-                curriculum, total, available, completed if user_id else None, percent
+                curriculum,
+                total,
+                available,
+                completed if user_id else None,
+                percent,
+                preview_actor_id=actor.user_id if query.view == "editor" else None,
             )
         )
     return Page[CurriculumSummary](

@@ -5,6 +5,20 @@ from sqlalchemy.orm import Session
 
 from app.modules.curricula.tables import curricula, curriculum_items
 
+_SUMMARY_SELECT = """
+    SELECT c.*, COALESCE(c.thumbnail_image_id, (
+        SELECT content.thumbnail_image_id
+        FROM sasu.curriculum_items i JOIN sasu.contents content USING (content_id)
+        WHERE i.curriculum_id = c.curriculum_id ORDER BY i.position LIMIT 1
+    )) AS resolved_thumbnail_image_id,
+    COALESCE(c.thumbnail_image_id, (
+        SELECT CASE WHEN content.status = 'PUBLISHED' THEN content.thumbnail_image_id END
+        FROM sasu.curriculum_items i JOIN sasu.contents content USING (content_id)
+        WHERE i.curriculum_id = c.curriculum_id ORDER BY i.position LIMIT 1
+    )) AS public_thumbnail_image_id
+    FROM sasu.curricula c
+"""
+
 
 def learner_exists(session: Session, user_id: int) -> bool:
     return bool(
@@ -18,17 +32,15 @@ def learner_exists(session: Session, user_id: int) -> bool:
 
 
 def find_curriculum(session: Session, curriculum_id: int, lock: bool = False):
-    statement = "SELECT * FROM sasu.curricula WHERE curriculum_id = :id"
+    statement = _SUMMARY_SELECT + " WHERE c.curriculum_id = :id"
     if lock:
-        statement += " FOR UPDATE"
+        statement += " FOR UPDATE OF c"
     return session.execute(text(statement), {"id": curriculum_id}).mappings().one_or_none()
 
 
 def list_curricula(session: Session):
     return (
-        session.execute(
-            text("SELECT * FROM sasu.curricula ORDER BY created_at DESC, curriculum_id")
-        )
+        session.execute(text(_SUMMARY_SELECT + " ORDER BY c.created_at DESC, c.curriculum_id"))
         .mappings()
         .all()
     )
@@ -42,10 +54,16 @@ def create_curriculum(session: Session, title: str, description: str | None) -> 
     )
 
 
-def update_curriculum(session: Session, curriculum_id: int, title: str, description: str | None):
+def update_curriculum(
+    session: Session,
+    curriculum_id: int,
+    title: str,
+    description: str | None,
+):
     session.execute(
         text("""UPDATE sasu.curricula SET title = :title, description = :description,
-                updated_at = clock_timestamp() WHERE curriculum_id = :id"""),
+                updated_at = clock_timestamp()
+                WHERE curriculum_id = :id"""),
         {"id": curriculum_id, "title": title, "description": description},
     )
 
@@ -58,6 +76,7 @@ def load_steps(session: Session, curriculum_ids: list[int], user_id: int | None)
             text(
                 """
             SELECT i.curriculum_id, i.position, c.content_id, c.title, c.status,
+                   c.thumbnail_image_id,
                    c.category_id, category.name AS category_name,
                    asset.video_asset_id, asset.storage_path, asset.duration_seconds,
                    asset.size_bytes, asset.mime_type,

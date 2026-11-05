@@ -45,8 +45,7 @@ class ContentDetailQuery(InputModel, ViewQuery):
     user_id: ResourceId | None = None
 
 
-class VideoQuery(InputModel):
-    revision: NonBlankText | None = None
+class ThumbnailQuery(InputModel):
     preview: bool = False
     actor_id: ResourceId | None = None
 
@@ -55,6 +54,10 @@ class VideoQuery(InputModel):
         if self.preview and self.actor_id is None:
             raise ValueError("preview=true이면 actor_id가 필요합니다.")
         return self
+
+
+class VideoQuery(ThumbnailQuery):
+    revision: NonBlankText | None = None
 
 
 class ContentFields(InputModel):
@@ -92,7 +95,7 @@ class ContentCreate(ContentFields):
 class ContentUpdate(ContentFields):
     """편집 조회 시각을 전달하면 오래된 저장을 거절한다."""
 
-    expected_updated_at: AwareDatetime | None = None
+    expected_updated_at: AwareDatetime
 
     tag_ids: list[StrictResourceId] = Field(
         default_factory=list, description="생략 시 유지. 전달하면 전체 교체, []는 모두 해제."

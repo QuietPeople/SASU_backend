@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import text
 
 from app.core.config import get_settings
+from tests.edit_helpers import course_edit_body
 
 
 def execute(db, sql, **params):
@@ -419,10 +420,18 @@ def test_curriculum_reorder_private_steps_and_empty_course(client, database, rec
     database.commit()
     steps = f"/api/curriculums/{r['curriculum']}/steps"
     for ids in [[r["content"], private], [private, r["content"]]]:
-        result = client.put(steps, headers=headers(r), json={"content_ids": ids})
+        result = client.put(
+            steps,
+            headers=headers(r),
+            json=course_edit_body(client, steps, headers(r), {"content_ids": ids}),
+        )
         assert result.status_code == 200, result.text
         assert [x["content_id"] for x in result.json()["items"]] == ids
-    duplicate = client.put(steps, headers=headers(r), json={"content_ids": [private, private]})
+    duplicate = client.put(
+        steps,
+        headers=headers(r),
+        json=course_edit_body(client, steps, headers(r), {"content_ids": [private, private]}),
+    )
     assert duplicate.status_code == 422
     detail = client.get(f"/api/curriculums/{r['curriculum']}", headers=headers(r, "user1"))
     assert detail.status_code == 200, detail.text
@@ -451,7 +460,12 @@ def test_curriculum_reorder_private_steps_and_empty_course(client, database, rec
     assert empty.status_code == 200, empty.text
     assert empty.json()["total_steps"] == 0 and empty.json()["progress_percent"] is None
     assert (
-        client.put(steps, headers=headers(r, "user1"), json={"content_ids": []}).status_code == 403
+        client.put(
+            steps,
+            headers=headers(r, "user1"),
+            json=course_edit_body(client, steps, headers(r), {"content_ids": []}),
+        ).status_code
+        == 403
     )
 
 
@@ -618,7 +632,9 @@ def test_media_availability_agrees_across_parts(client, database, records, damag
     answer(database, r, "VIDEO_END", "CORRECT")
     assert client.put(f"/api/users/{uid}/contents/{cid}/saved", headers=learner).status_code == 200
     assert client.patch(
-        f"/api/users/{uid}/feed-state", headers=learner, json={"last_content_id": cid}
+        f"/api/users/{uid}/feed-state",
+        headers=learner,
+        json={"last_content_id": cid},
     ).json()["resume_available"]
     candidate_url = f"/api/users/{uid}/reviews/feed/candidate"
     candidate_body = {"shown_question_version_ids": [], "retry_question_version_ids": []}
@@ -673,9 +689,22 @@ def test_media_availability_agrees_across_parts(client, database, records, damag
 
 
 def test_content_summary_agrees_in_content_curriculum_and_wrong_answers(client, database, records):
+    from io import BytesIO
+
+    from PIL import Image
+
     r = records
     uid, cid = r["user1"], r["content"]
     learner = {**headers(r, "user1"), "X-Record-Generation": "0"}
+    image_data = BytesIO()
+    with Image.new("RGB", (16, 16), "red") as image:
+        image.save(image_data, format="PNG")
+    upload = client.put(
+        f"/api/contents/{cid}/thumbnail",
+        headers=headers(r),
+        files={"file": ("image.png", image_data.getvalue())},
+    )
+    assert upload.status_code == 204, upload.text
     answer(database, r, "VIDEO_END", "WRONG")
     assert client.put(f"/api/users/{uid}/contents/{cid}/like", headers=learner).status_code == 200
     assert client.put(f"/api/users/{uid}/contents/{cid}/saved", headers=learner).status_code == 200
@@ -687,3 +716,11 @@ def test_content_summary_agrees_in_content_curriculum_and_wrong_answers(client, 
     assert wrongs.status_code == 200, wrongs.text
     assert detail.json()["content"] == course.json()["steps"][0]["content"]
     assert detail.json()["content"] == wrongs.json()["items"][0]["content"]
+    assert detail.json()["content"]["thumbnail_url"] == f"/api/contents/{cid}/thumbnail"
+    database.commit()
+    saved = client.get(f"/api/users/{uid}/saved-contents", headers=learner)
+    assert saved.status_code == 200, saved.text
+    assert (
+        saved.json()["items"][0]["content"]["thumbnail_url"]
+        == detail.json()["content"]["thumbnail_url"]
+    )
