@@ -17,7 +17,7 @@ def lock_content(session: Session, content_id: int):
                 FROM sasu.contents c
                 LEFT JOIN sasu.video_assets va ON va.video_asset_id = c.video_asset_id
                 WHERE c.content_id = :cid
-                FOR UPDATE OF c
+                FOR SHARE OF c
                 """
             ),
             {"cid": content_id},

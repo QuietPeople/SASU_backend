@@ -275,3 +275,18 @@ def test_commit_failure_rolls_back_and_allows_retry(api_context, method):
     assert response.status_code == 500
     assert relations(ctx) == before
     assert ctx.client.request(method, ctx.path, headers=ctx.headers).status_code == 200
+
+
+def test_saved_title_search_before_paging(api_context):
+    ctx = api_context
+    for content_id in ctx.contents[:2]:
+        response = ctx.client.put(
+            f"/api/users/{ctx.learner}/contents/{content_id}/saved", headers=ctx.headers
+        )
+        assert response.status_code == 200
+    page = ctx.client.get(ctx.list_path, params={"q": "_0", "size": 1}, headers=ctx.headers).json()
+    assert page["total"] == 1 and page["items"][0]["content"]["content_id"] == ctx.contents[0]
+    beyond = ctx.client.get(
+        ctx.list_path, params={"q": "_0", "page": 2}, headers=ctx.headers
+    ).json()
+    assert beyond["total"] == 1 and beyond["items"] == []

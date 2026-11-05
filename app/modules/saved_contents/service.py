@@ -2,6 +2,7 @@ from collections.abc import Sequence
 
 from sqlalchemy.orm import Session
 
+from app.api.schemas import page_offset
 from app.core.exceptions import ApiError
 from app.integrations.storage import LocalVideoStorage
 from app.modules.contents import repository as contents_repository
@@ -66,9 +67,12 @@ def list_saved_contents(
         ):
             raise ApiError(404, "CATEGORY_NOT_FOUND", "지정한 카테고리가 없습니다.")
         candidates = repository.list_saved_candidates(
-            session, user_id, category_id=query.category_id
+            session, user_id, category_id=query.category_id, q=query.q
         )
         playable = filter_playable_candidates(candidates, storage)
+        start = page_offset(query.page, query.size)
+        total = len(playable)
+        playable = playable[start : start + query.size]
         presentations = contents_repository.load_presentations(
             session, [item.content for item in playable], user_id
         )
@@ -78,7 +82,13 @@ def list_saved_contents(
             )
             for candidate, presentation in zip(playable, presentations, strict=True)
         ]
-        result = paginate_saved_items(items, query)
+        result = SavedContentsPage(
+            items=items,
+            page=query.page,
+            size=query.size,
+            total=total,
+            has_next=start + query.size < total,
+        )
     return result
 
 
@@ -94,7 +104,7 @@ def paginate_saved_items(
 ) -> SavedContentsPage:
     """재생 가능 여부를 필터링하고 정렬한 전체 항목에만 페이지를 적용한다."""
     total = len(items)
-    start = (query.page - 1) * query.size
+    start = page_offset(query.page, query.size)
     end = start + query.size
     return SavedContentsPage(
         items=list(items[start:end]),

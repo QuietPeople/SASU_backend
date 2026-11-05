@@ -2,6 +2,8 @@
 
 from sqlalchemy import text
 
+from app.api.schemas import page_offset
+
 CONTENT_SQL = """
 WITH attempts AS (
  SELECT a.*, r.response_id, r.result FROM sasu.quiz_attempts a
@@ -59,14 +61,44 @@ def content_stats(session, content_id):
     return session.execute(text(CONTENT_SQL), {"id": content_id}).mappings().one_or_none()
 
 
-def all_stats(session):
-    # One SQL statement keeps all content aggregates in the same read snapshot.
-    query = (
-        "SELECT target.status, stats.* FROM sasu.contents target CROSS JOIN LATERAL ("
-        + CONTENT_SQL.replace(":id", "target.content_id")
-        + ") stats"
+def overview(session):
+    return (
+        session.execute(
+            text("""
+        WITH contexts AS (
+            SELECT a.context, count(d.event_id) AS displayed_count,
+              count(*) FILTER (WHERE r.result IN ('CORRECT','WRONG')) AS answered_count,
+              count(*) FILTER (WHERE r.result='CORRECT') AS correct_count,
+              count(*) FILTER (WHERE r.result='SKIPPED') AS skipped_count
+            FROM sasu.quiz_attempts a LEFT JOIN sasu.quiz_responses r USING(attempt_id)
+            JOIN sasu.quizzes q ON q.quiz_id=a.quiz_id
+            LEFT JOIN sasu.learning_events d ON d.attempt_id=a.attempt_id
+              AND d.event_type='QUIZ_DISPLAYED' AND d.content_id=q.content_id GROUP BY a.context
+        )
+        SELECT * FROM
+          (SELECT count(*) AS content_count, count(*) FILTER (WHERE c.status='PUBLISHED')
+           AS published_content_count FROM sasu.contents c) contents
+        CROSS JOIN (SELECT count(*) AS played_count, count(completed_at) AS completed_count,
+                           count(view_counted_at) AS view_count FROM sasu.watch_records) watches
+        CROSS JOIN (SELECT count(*) AS like_count FROM sasu.content_likes) likes
+        CROSS JOIN (SELECT count(*) AS saved_count FROM sasu.saved_contents) saves
+        CROSS JOIN (SELECT count(*) AS first_answered, count(*) FILTER (WHERE result='CORRECT')
+                    AS first_correct FROM sasu.first_video_responses) firsts
+        CROSS JOIN (SELECT count(*) FILTER (WHERE w.status='UNRESOLVED')
+                    AS current_unresolved_count,
+                    count(*) FILTER (WHERE w.status='RESOLVED') AS resolved_version_count
+                    FROM sasu.wrong_answers w JOIN sasu.quizzes q
+                    ON q.current_version_id=w.quiz_version_id) wrongs
+        CROSS JOIN (SELECT count(*) FILTER (WHERE event_type='CARD_OPENED') AS opened_count,
+                    count(*) FILTER (WHERE event_type='CARD_REVEALED') AS revealed_count
+                    FROM sasu.learning_events WHERE content_id IS NOT NULL) cards
+        CROSS JOIN (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) AS contexts
+                    FROM contexts x) grouped
+    """)
+        )
+        .mappings()
+        .one()
     )
-    return session.execute(text(query)).mappings().all()
 
 
 def content_list(session, query):
@@ -99,7 +131,7 @@ def content_list(session, query):
                 "category": query.category_id,
                 "status": query.status,
                 "size": query.size,
-                "offset": (query.page - 1) * query.size,
+                "offset": page_offset(query.page, query.size),
             },
         )
         .mappings()
@@ -109,7 +141,7 @@ def content_list(session, query):
 
 def responses(session, query):
     conditions = []
-    params = {"limit": query.size, "offset": (query.page - 1) * query.size}
+    params = {"limit": query.size, "offset": page_offset(query.page, query.size)}
     mapping = {
         "user_id": "a.user_id",
         "content_id": "q.content_id",

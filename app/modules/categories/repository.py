@@ -40,3 +40,19 @@ def rename_category(session: Session, category: Category, name: str) -> Category
     category.updated_at = datetime.now(UTC)
     session.flush()
     return category
+
+
+def category_counts(session: Session):
+    return (
+        session.execute(
+            text("""
+        SELECT category_id, k.name, count(c.content_id) AS total_count,
+               count(*) FILTER (WHERE c.status='PUBLISHED') AS published_count,
+               count(*) FILTER (WHERE c.status='DRAFT') AS draft_count
+        FROM sasu.categories k LEFT JOIN sasu.contents c USING(category_id)
+        GROUP BY k.category_id, k.name ORDER BY k.category_id
+    """)
+        )
+        .mappings()
+        .all()
+    )

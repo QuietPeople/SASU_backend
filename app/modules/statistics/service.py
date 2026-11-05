@@ -5,8 +5,10 @@ from sqlalchemy import text
 from app.api.schemas import Page
 from app.core.exceptions import ApiError
 from app.modules.admin.schemas import Rate, ReactionStats
+from app.modules.questions.schemas import QuestionVersion
+from app.modules.responses.repository import list_response_rows
 from app.modules.responses.schemas import ResponseDetail
-from app.modules.responses.service import get_response
+from app.modules.responses.service import build_detail
 from app.modules.statistics import repository
 from app.modules.statistics.schemas import (
     ContentStatistics,
@@ -79,33 +81,10 @@ def content_stats(session, content_id):
 
 
 def overview(session):
-    rows = repository.all_stats(session)
-    total = {}
-    contexts = {}
-    for row in rows:
-        for key in (
-            "view_count",
-            "like_count",
-            "saved_count",
-            "completed_count",
-            "played_count",
-            "first_correct",
-            "first_answered",
-            "current_unresolved_count",
-            "resolved_version_count",
-            "opened_count",
-            "revealed_count",
-        ):
-            total[key] = total.get(key, 0) + row[key]
-        for item in row["contexts"]:
-            target = contexts.setdefault(item["context"], {"context": item["context"]})
-            for key, value in item.items():
-                if key != "context":
-                    target[key] = target.get(key, 0) + value
-    total["contexts"] = list(contexts.values())
+    total = repository.overview(session)
     return Overview(
-        content_count=len(rows),
-        published_content_count=sum(r["status"] == "PUBLISHED" for r in rows),
+        content_count=total["content_count"],
+        published_content_count=total["published_content_count"],
         **metrics(total),
     )
 
@@ -156,7 +135,10 @@ def responses(session, query, actor):
             raise ApiError(422, "FILTER_RELATION_MISMATCH", "콘텐츠·문항·버전의 소속이 다릅니다.")
     row = repository.responses(session, query)
     return Page[ResponseDetail](
-        items=[get_response(session, id, actor) for id in row["ids"]],
+        items=[
+            build_detail(record, QuestionVersion.model_validate(record))
+            for record in list_response_rows(session, row["ids"], actor)
+        ],
         total=row["total"],
         page=query.page,
         size=query.size,

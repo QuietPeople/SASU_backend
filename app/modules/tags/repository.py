@@ -1,6 +1,7 @@
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from app.api.schemas import page_offset
 from app.modules.tags.models import Tag
 
 
@@ -9,7 +10,7 @@ def list_tags(session: Session, q: str | None, page: int, size: int) -> tuple[li
     if q:
         query = query.where(Tag.name.icontains(q, autoescape=True))
     total = session.scalar(select(func.count()).select_from(query.subquery()))
-    offset = (page - 1) * size
+    offset = page_offset(page, size)
     if offset >= total:
         return [], total
     items = list(session.scalars(query.order_by(Tag.tag_id).offset(offset).limit(size)))

@@ -15,10 +15,10 @@ def find_event(session: Session, event_id: UUID):
     return (
         session.execute(
             text("""SELECT e.* FROM sasu.learning_events e
-            WHERE e.event_id = :id
-               OR COALESCE(e.metadata->'client_event_ids', '[]'::jsonb) ? :client_id
+            WHERE e.event_id = :id OR e.event_id = (
+                SELECT event_id FROM sasu.event_retry_keys WHERE client_event_id=:id)
             FOR UPDATE OF e"""),
-            {"id": event_id, "client_id": str(event_id)},
+            {"id": event_id},
         )
         .mappings()
         .one_or_none()
@@ -40,12 +40,9 @@ def find_display(session: Session, attempt_id: UUID):
 def remember_retry_id(session: Session, event_id: UUID, client_event_id: UUID) -> None:
     # 같은 풀이의 다른 재전송 키도 예약한다. 사용자 metadata나 검색어는 저장하지 않는다.
     session.execute(
-        text("""UPDATE sasu.learning_events SET metadata = jsonb_set(
-            metadata, '{client_event_ids}',
-            COALESCE(metadata->'client_event_ids', '[]'::jsonb)
-            || jsonb_build_array(CAST(:key AS text))
-        ) WHERE event_id = :id"""),
-        {"id": event_id, "key": str(client_event_id)},
+        text("""INSERT INTO sasu.event_retry_keys(client_event_id,event_id)
+                VALUES (:key,:id)"""),
+        {"id": event_id, "key": client_event_id},
     )
 
 

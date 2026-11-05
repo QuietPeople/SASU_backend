@@ -3,6 +3,7 @@
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from app.api.schemas import page_offset
 from app.modules.questions.tables import quizzes
 
 
@@ -121,7 +122,7 @@ def list_versions(session: Session, question_id: int, page: int, size: int):
     total = session.scalar(
         text("SELECT count(*) FROM sasu.quiz_versions WHERE quiz_id = :id"), {"id": question_id}
     )
-    offset = (page - 1) * size
+    offset = page_offset(page, size)
     if offset >= total:
         return [], total
     rows = (

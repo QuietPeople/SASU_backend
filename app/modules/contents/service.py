@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ApiError
+from app.core.exceptions import ApiError, check_edit_version
 from app.integrations.storage import LocalVideoStorage
 from app.modules.contents import repository
 from app.modules.contents.models import Content, ContentStatus, VideoAsset
@@ -186,6 +186,10 @@ def list_contents(session: Session, actor_id: int, query: ContentListQuery) -> C
     try:
         with session.begin():
             actor, target_id = _reader(session, actor_id, query.user_id)
+            if query.missing and actor.role != UserRole.ADMIN:
+                raise ApiError(
+                    403, "EDITOR_VIEW_REQUIRED", "미등록 필터는 관리자만 사용할 수 있습니다."
+                )
             status = query.status or ("ALL" if actor.role == UserRole.ADMIN else "PUBLISHED")
             if actor.role != UserRole.ADMIN and status != "PUBLISHED":
                 raise ApiError(403, "EDITOR_VIEW_REQUIRED", "임시저장 조회는 관리자만 가능합니다.")
@@ -243,7 +247,8 @@ def update_content(
             if content is None:
                 raise ApiError(404, "CONTENT_NOT_FOUND", "콘텐츠가 없습니다.")
             item = repository.load_presentations(session, [content])[0]
-            changes = data.model_dump(exclude_unset=True)
+            check_edit_version(data.expected_updated_at, content.updated_at)
+            changes = data.model_dump(exclude_unset=True, exclude={"expected_updated_at"})
             if "category_id" in changes:
                 item.category = _category(session, changes["category_id"])
             tag_ids = changes.pop("tag_ids", None)

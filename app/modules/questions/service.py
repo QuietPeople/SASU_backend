@@ -19,6 +19,17 @@ from app.modules.questions.schemas import (
 def validate_options(request: QuestionInput | QuestionVersion) -> None:
     count = {"OX": 2, "MCQ_3": 3, "MCQ_4": 4}[request.question_type]
     options = sorted(request.options, key=lambda option: option.option_order)
+    if isinstance(request, QuestionInput):
+        positions = {}
+        for option in options:
+            positions.setdefault(option.option_text.strip(), []).append(option.option_order)
+        fields = [
+            {"field": f"options[{index}].option_text", "reason": f"중복 보기 위치: {orders}"}
+            for index, option in enumerate(request.options)
+            if len(orders := positions[option.option_text.strip()]) > 1
+        ]
+        if fields:
+            raise ApiError(422, "DUPLICATE_OPTION", "보기 문구가 중복됩니다.", fields)
     if (
         len(options) != count
         or [option.option_order for option in options] != list(range(1, count + 1))

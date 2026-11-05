@@ -49,3 +49,8 @@ def rename_category(
     except Exception:
         session.rollback()
         raise
+
+
+def category_counts(session: Session, actor_id: int):
+    require_admin(session, actor_id)
+    return {"items": repository.category_counts(session)}

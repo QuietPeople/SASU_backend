@@ -89,7 +89,11 @@ def get_steps(
     session: Database,
 ):
     detail = service.get_detail(session, curriculum_id, query, actor)
-    return CurriculumSteps(items=detail.steps, total_steps=detail.summary.total_steps)
+    return CurriculumSteps(
+        updated_at=detail.summary.updated_at,
+        items=detail.steps,
+        total_steps=detail.summary.total_steps,
+    )
 
 
 @router.put(
@@ -150,7 +154,9 @@ async def put_curriculum_thumbnail(
 )
 def get_curriculum_thumbnail(curriculum_id: ResourceId, session: Database):
     data, mime = thumbnail_service.get_curriculum_thumbnail(session, curriculum_id)
-    return Response(content=data, media_type=mime, headers={"Cache-Control": "public, max-age=86400"})
+    return Response(
+        content=data, media_type=mime, headers={"Cache-Control": "public, max-age=86400"}
+    )
 
 
 @router.delete(
@@ -159,7 +165,5 @@ def get_curriculum_thumbnail(curriculum_id: ResourceId, session: Database):
     dependencies=[Depends(require_admin), Depends(reject_query_parameters)],
     summary="API-CRS-IMG-03 커리큘럼 썸네일 삭제",
 )
-def delete_curriculum_thumbnail(
-    curriculum_id: ResourceId, actor_id: ActorId, session: Database
-):
+def delete_curriculum_thumbnail(curriculum_id: ResourceId, actor_id: ActorId, session: Database):
     thumbnail_service.delete_curriculum_thumbnail(session, curriculum_id, actor_id)

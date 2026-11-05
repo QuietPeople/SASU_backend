@@ -8,6 +8,7 @@ from app.core.exceptions import ErrorResponse
 from app.db.session import get_db
 from app.modules.categories import service
 from app.modules.categories.schemas import (
+    CategoryCountsList,
     CategoryCreate,
     CategoryList,
     CategoryListQuery,
@@ -28,6 +29,11 @@ def list_categories(
     query: Annotated[CategoryListQuery, Query()], session: Annotated[Session, Depends(get_db)]
 ):
     return service.list_categories(session)
+
+
+@router.get("/counts", response_model=CategoryCountsList, summary="관리자 분야별 콘텐츠 수")
+def category_counts(actor_id: ActorId, session: Annotated[Session, Depends(get_db)]):
+    return service.category_counts(session, actor_id)
 
 
 @router.post(

@@ -596,3 +596,17 @@ def test_real_app_review_to_attempt_display_submit_and_wrong_list(
             == selected
         )
         assert snapshot(database) == before
+
+
+def test_title_search_matches_literal_characters_before_paging(client, records, database, respond):
+    respond()
+    content_id = records["questions"][0]["content_id"]
+    database.execute(
+        text("UPDATE sasu.contents SET title='SQL_% 기초' WHERE content_id=:id"), {"id": content_id}
+    )
+    database.commit()
+    for path in ("/flashcards", "/wrong-answers"):
+        match = get(client, records, path, params={"q": " sql_% ", "size": 1})
+        assert match["total"] == len(match["items"]) == 1
+        empty = get(client, records, path, params={"q": "_%", "page": 2, "size": 1})
+        assert empty["items"] == [] and empty["total"] == 1

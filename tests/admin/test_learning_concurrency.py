@@ -179,3 +179,21 @@ def test_course_replacements_are_serialized(http, records, postgres_engine, monk
         assert [step["content_id"] for step in response.json()["items"]] == records["contents"][:1]
         final = http.get(path + "?view=editor", headers=actor)
         assert final.json() == response.json()
+
+
+def test_watchers_share_content_lock_and_block_video_edits(records, postgres_engine):
+    from sqlalchemy.exc import OperationalError
+
+    from app.modules.watch_records.repository import lock_content
+
+    content_id = records["contents"][0]
+    with Session(postgres_engine) as first, Session(postgres_engine) as second:
+        assert lock_content(first, content_id)
+        second.execute(text("SET LOCAL lock_timeout = '350ms'"))
+        assert lock_content(second, content_id)
+        with pytest.raises(OperationalError) as error:
+            second.execute(
+                text("UPDATE sasu.contents SET title='new' WHERE content_id=:id"),
+                {"id": content_id},
+            )
+        assert error.value.orig.sqlstate == "55P03"

@@ -22,5 +22,15 @@ class CategoryRead(BaseModel):
     name: Annotated[str, Field(min_length=1, max_length=80)]
 
 
+class CategoryCounts(CategoryRead):
+    total_count: int
+    published_count: int
+    draft_count: int
+
+
+class CategoryCountsList(BaseModel):
+    items: list[CategoryCounts]
+
+
 class CategoryList(BaseModel):
     items: list[CategoryRead]
