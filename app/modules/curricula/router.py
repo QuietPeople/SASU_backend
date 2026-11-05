@@ -123,7 +123,7 @@ def get_progress(
 @router.put(
     "/curriculums/{curriculum_id}/thumbnail",
     status_code=204,
-    dependencies=[Depends(require_admin), Depends(reject_query_parameters)],
+    dependencies=[Depends(reject_query_parameters)],  # 관리자 검사는 서비스에서 트랜잭션 안에서 수행
     summary="API-CRS-IMG-01 커리큘럼 썸네일 등록·교체",
     description="관리자가 JPEG·PNG·WebP 이미지를 썸네일로 등록합니다. 최대 10MB.",
     responses={
@@ -162,7 +162,7 @@ def get_curriculum_thumbnail(curriculum_id: ResourceId, session: Database):
 @router.delete(
     "/curriculums/{curriculum_id}/thumbnail",
     status_code=204,
-    dependencies=[Depends(require_admin), Depends(reject_query_parameters)],
+    dependencies=[Depends(reject_query_parameters)],  # 관리자 검사는 서비스에서 트랜잭션 안에서 수행
     summary="API-CRS-IMG-03 커리큘럼 썸네일 삭제",
 )
 def delete_curriculum_thumbnail(curriculum_id: ResourceId, actor_id: ActorId, session: Database):
