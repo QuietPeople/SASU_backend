@@ -1,18 +1,19 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.modules.contents.models import Content, ContentStatus, VideoAsset
+from app.api.schemas import page_offset
+from app.modules.contents.models import Content, ContentStatus
+from app.modules.saved_contents.schemas import SavedContentsQuery
 from app.modules.saved_contents.tables import saved_contents
 
 
 @dataclass(frozen=True)
-class SavedCandidate:
+class SavedContentRow:
     content: Content
-    video: VideoAsset | None
     saved_at: datetime
 
 
@@ -52,22 +53,25 @@ def get_saved_content_ids(session: Session, user_id: int, content_ids: list[int]
     )
 
 
-def list_saved_candidates(
-    session: Session, user_id: int, *, category_id: int | None = None, q: str = ""
-) -> list[SavedCandidate]:
-    """공개 콘텐츠 후보만 정렬한다. 파일 검사·최종 total·페이징은 수행하지 않는다."""
+def list_saved_contents(
+    session: Session, user_id: int, query: SavedContentsQuery
+) -> tuple[list[SavedContentRow], int]:
     statement = (
-        select(Content, VideoAsset, saved_contents.c.created_at)
+        select(Content, saved_contents.c.created_at)
         .select_from(saved_contents)
         .join(Content, Content.content_id == saved_contents.c.content_id)
-        .outerjoin(VideoAsset, VideoAsset.video_asset_id == Content.video_asset_id)
         .where(saved_contents.c.user_id == user_id, Content.status == ContentStatus.PUBLISHED)
     )
-    if q.strip():
-        statement = statement.where(Content.title.icontains(q.strip(), autoescape=True))
-    if category_id is not None:
-        statement = statement.where(Content.category_id == category_id)
-    statement = statement.order_by(saved_contents.c.created_at.desc(), Content.content_id)
+    if query.q.strip():
+        statement = statement.where(Content.title.icontains(query.q.strip(), autoescape=True))
+    if query.category_id is not None:
+        statement = statement.where(Content.category_id == query.category_id)
+    total = session.scalar(select(func.count()).select_from(statement.subquery()))
+    statement = (
+        statement.order_by(saved_contents.c.created_at.desc(), Content.content_id)
+        .offset(page_offset(query.page, query.size))
+        .limit(query.size)
+    )
     # 응답 조립 중 공개 상태·영상 연결이 바뀌지 않게 부모 콘텐츠를 공유 잠근다.
     statement = statement.with_for_update(read=True, of=Content)
-    return [SavedCandidate(*row) for row in session.execute(statement)]
+    return [SavedContentRow(*row) for row in session.execute(statement)], total

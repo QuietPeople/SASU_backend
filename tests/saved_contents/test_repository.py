@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.modules.contents.models import Content
 from app.modules.saved_contents import repository
+from app.modules.saved_contents.schemas import SavedContentsQuery
 from app.modules.saved_contents.tables import saved_contents
 
 
@@ -75,7 +76,7 @@ def test_delete_can_remove_existing_draft_relation(context):
         )
 
 
-def test_candidate_order_category_and_user_isolation(context):
+def test_list_order_category_and_user_isolation(context):
     ctx = context
     first_time = datetime(2026, 1, 1, tzinfo=UTC)
     with ctx.session.begin():
@@ -92,29 +93,32 @@ def test_candidate_order_category_and_user_isolation(context):
         repository.insert_saved_content(ctx.session, ctx.other, ctx.contents[1], 1)
 
         before = _relations(ctx.session)
-        rows = repository.list_saved_candidates(ctx.session, ctx.learner)
+        rows, total = repository.list_saved_contents(ctx.session, ctx.learner, SavedContentsQuery())
+        assert total == 3
         assert [row.content.content_id for row in rows] == [
             ctx.contents[2],
             ctx.contents[0],
             ctx.contents[1],
         ]
         assert rows[0].saved_at == first_time + timedelta(days=1)
-        assert all(row.video.video_asset_id == row.content.video_asset_id for row in rows)
-        filtered = repository.list_saved_candidates(
-            ctx.session, ctx.learner, category_id=ctx.categories[0]
+        filtered, total = repository.list_saved_contents(
+            ctx.session, ctx.learner, SavedContentsQuery(category_id=ctx.categories[0])
         )
+        assert total == 2
         assert [row.content.content_id for row in filtered] == ctx.contents[:2]
-        other = repository.list_saved_candidates(ctx.session, ctx.other)
+        other, total = repository.list_saved_contents(ctx.session, ctx.other, SavedContentsQuery())
+        assert total == 1
         assert [row.content.content_id for row in other] == [ctx.contents[1]]
-        assert (
-            repository.list_saved_candidates(ctx.session, ctx.other, category_id=ctx.categories[1])
-            == []
-        )
+        assert repository.list_saved_contents(
+            ctx.session, ctx.other, SavedContentsQuery(category_id=ctx.categories[1])
+        ) == ([], 0)
         assert _relations(ctx.session) == before
 
 
-def test_empty_candidates(context):
-    assert repository.list_saved_candidates(context.session, context.learner) == []
+def test_empty_list(context):
+    assert repository.list_saved_contents(
+        context.session, context.learner, SavedContentsQuery()
+    ) == ([], 0)
 
 
 def test_repository_writes_remain_in_callers_transaction(context):
@@ -123,14 +127,17 @@ def test_repository_writes_remain_in_callers_transaction(context):
         repository.insert_saved_content(ctx.session, ctx.learner, ctx.contents[0], 1)
         raise RuntimeError("취소")
     with ctx.session.begin():
-        assert repository.list_saved_candidates(ctx.session, ctx.learner) == []
+        assert repository.list_saved_contents(ctx.session, ctx.learner, SavedContentsQuery()) == (
+            [],
+            0,
+        )
         repository.insert_saved_content(ctx.session, ctx.learner, ctx.contents[0], 1)
     with pytest.raises(RuntimeError, match="취소"), ctx.session.begin():
         repository.delete_saved_content(ctx.session, ctx.learner, ctx.contents[0])
         raise RuntimeError("취소")
-    assert [
-        row.content.content_id for row in repository.list_saved_candidates(ctx.session, ctx.learner)
-    ] == [ctx.contents[0]]
+    rows, total = repository.list_saved_contents(ctx.session, ctx.learner, SavedContentsQuery())
+    assert [row.content.content_id for row in rows] == [ctx.contents[0]]
+    assert total == 1
 
 
 def test_existing_db_trigger_rejects_invalid_epoch(context):
@@ -138,7 +145,28 @@ def test_existing_db_trigger_rejects_invalid_epoch(context):
     with pytest.raises(IntegrityError) as error, ctx.session.begin():
         repository.insert_saved_content(ctx.session, ctx.learner, ctx.contents[0], 2)
     assert error.value.orig.sqlstate == "23514"
-    assert repository.list_saved_candidates(ctx.session, ctx.learner) == []
+    assert repository.list_saved_contents(ctx.session, ctx.learner, SavedContentsQuery()) == ([], 0)
+
+
+@pytest.mark.parametrize(
+    "page,size,indices",
+    [(1, 2, [0, 1]), (2, 2, [2]), (3, 2, []), (1, 10, [0, 1, 2])],
+)
+def test_list_pages_keep_total_and_stable_order(context, page, size, indices):
+    ctx = context
+    with ctx.session.begin():
+        for content_id in ctx.contents:
+            repository.insert_saved_content(ctx.session, ctx.learner, content_id, 1)
+        ctx.session.execute(
+            update(saved_contents)
+            .where(saved_contents.c.user_id == ctx.learner)
+            .values(created_at=datetime(2026, 1, 1, tzinfo=UTC))
+        )
+        rows, total = repository.list_saved_contents(
+            ctx.session, ctx.learner, SavedContentsQuery(page=page, size=size)
+        )
+        assert total == 3
+        assert [row.content.content_id for row in rows] == [ctx.contents[i] for i in indices]
 
 
 def test_saved_count_view_tracks_relationship_changes(context):

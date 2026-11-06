@@ -1,15 +1,11 @@
-from collections.abc import Sequence
-
 from sqlalchemy.orm import Session
 
 from app.api.schemas import page_offset
 from app.core.exceptions import ApiError
-from app.integrations.storage import LocalVideoStorage
 from app.modules.contents import repository as contents_repository
 from app.modules.contents.models import ContentStatus
-from app.modules.contents.service import build_content_summary, is_video_available
+from app.modules.contents.service import build_content_summary
 from app.modules.saved_contents import repository
-from app.modules.saved_contents.repository import SavedCandidate
 from app.modules.saved_contents.schemas import (
     SavedContentsPage,
     SavedContentsQuery,
@@ -50,7 +46,6 @@ def list_saved_contents(
     actor_id: int,
     user_id: int,
     query: SavedContentsQuery,
-    storage: LocalVideoStorage,
 ) -> SavedContentsPage:
     with session.begin():
         actor = get_actor(session, actor_id)
@@ -66,21 +61,14 @@ def list_saved_contents(
             and contents_repository.get_category(session, query.category_id) is None
         ):
             raise ApiError(404, "CATEGORY_NOT_FOUND", "지정한 카테고리가 없습니다.")
-        candidates = repository.list_saved_candidates(
-            session, user_id, category_id=query.category_id, q=query.q
-        )
-        playable = filter_playable_candidates(candidates, storage)
+        rows, total = repository.list_saved_contents(session, user_id, query)
         start = page_offset(query.page, query.size)
-        total = len(playable)
-        playable = playable[start : start + query.size]
         presentations = contents_repository.load_presentations(
-            session, [item.content for item in playable], user_id
+            session, [item.content for item in rows], user_id
         )
         items = [
-            SavedItem(
-                content=build_content_summary(presentation, actor_id), saved_at=candidate.saved_at
-            )
-            for candidate, presentation in zip(playable, presentations, strict=True)
+            SavedItem(content=build_content_summary(presentation, actor_id), saved_at=row.saved_at)
+            for row, presentation in zip(rows, presentations, strict=True)
         ]
         result = SavedContentsPage(
             items=items,
@@ -90,26 +78,3 @@ def list_saved_contents(
             has_next=start + query.size < total,
         )
     return result
-
-
-def filter_playable_candidates(
-    candidates: Sequence[SavedCandidate], storage: LocalVideoStorage
-) -> list[SavedCandidate]:
-    """원래 저장 순서를 유지하며 파일을 이용할 수 없는 후보만 제외한다."""
-    return [item for item in candidates if is_video_available(item.video, storage)]
-
-
-def paginate_saved_items(
-    items: Sequence[SavedItem], query: SavedContentsQuery
-) -> SavedContentsPage:
-    """재생 가능 여부를 필터링하고 정렬한 전체 항목에만 페이지를 적용한다."""
-    total = len(items)
-    start = page_offset(query.page, query.size)
-    end = start + query.size
-    return SavedContentsPage(
-        items=list(items[start:end]),
-        page=query.page,
-        size=query.size,
-        total=total,
-        has_next=end < total,
-    )

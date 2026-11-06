@@ -129,7 +129,7 @@ def test_unpublished_content_can_only_be_unsaved(api_context):
     assert relations(ctx) == []
 
 
-def test_list_filters_orders_and_pages_before_counting(api_context):
+def test_list_filters_orders_and_pages_without_file_checks(api_context):
     ctx = api_context
     first_time = datetime(2020, 1, 1, tzinfo=UTC)
     for content_id in ctx.contents:
@@ -165,10 +165,13 @@ def test_list_filters_orders_and_pages_before_counting(api_context):
         ctx.storage.resolve_path(video.storage_path).unlink()
     before = relations(ctx)
     data = ctx.client.get(ctx.list_path + "?size=1", headers=ctx.headers).json()
-    assert data["total"] == 1 and data["has_next"] is False
-    assert [item["content"]["content_id"] for item in data["items"]] == [ctx.contents[0]]
-    beyond = ctx.client.get(ctx.list_path + "?size=1&page=2", headers=ctx.headers).json()
-    assert beyond["total"] == 1 and beyond["items"] == []
+    assert data["total"] == 2 and data["has_next"] is True
+    assert [item["content"]["content_id"] for item in data["items"]] == [ctx.contents[1]]
+    second = ctx.client.get(ctx.list_path + "?size=1&page=2", headers=ctx.headers).json()
+    assert second["total"] == 2 and second["has_next"] is False
+    assert [item["content"]["content_id"] for item in second["items"]] == [ctx.contents[0]]
+    beyond = ctx.client.get(ctx.list_path + "?size=1&page=3", headers=ctx.headers).json()
+    assert beyond["total"] == 2 and beyond["items"] == []
     assert relations(ctx) == before
 
 
