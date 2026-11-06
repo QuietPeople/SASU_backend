@@ -10,6 +10,7 @@ from sqlalchemy.exc import OperationalError
 from app.core.config import get_settings
 from app.modules.curricula import repository as curricula_repository
 from app.modules.questions import repository as questions_repository
+from tests.edit_helpers import course_edit_body
 
 
 @pytest.fixture
@@ -119,7 +120,12 @@ def create_course(client, records, content_ids=None, title="기초 과정"):
         response = client.put(
             f"/api/curriculums/{course}/steps",
             headers=headers(records),
-            json={"content_ids": content_ids},
+            json=course_edit_body(
+                client,
+                f"/api/curriculums/{course}/steps",
+                headers(records),
+                {"content_ids": content_ids},
+            ),
         )
         assert response.status_code == 200, response.text
     return course
@@ -311,11 +317,22 @@ def test_empty_course_create_patch_and_visibility(client, records):
     detail = client.get(path + "?view=editor", headers=headers(records)).json()
     assert detail["steps"] == [] and detail["summary"]["progress_percent"] is None
     assert client.get(path, headers=headers(records, "user1")).status_code == 404
-    response = client.patch(path, headers=headers(records), json={"description": None})
+    response = client.patch(
+        path,
+        headers=headers(records),
+        json=course_edit_body(client, path, headers(records), {"description": None}),
+    )
     assert response.status_code == 200
     assert response.json()["description"] is None and response.json()["title"] == "기초 과정"
     for body in ({}, {"title": None}, {"title": " "}, {"unknown": 1}):
-        assert client.patch(path, headers=headers(records), json=body).status_code == 422
+        assert (
+            client.patch(
+                path,
+                headers=headers(records),
+                json=course_edit_body(client, path, headers(records), body),
+            ).status_code
+            == 422
+        )
     progress = client.get(
         f"/api/users/{records['user1']}/curriculums/{course}/progress",
         headers=headers(records, "user1"),
@@ -332,7 +349,11 @@ def test_reordering_preserves_step_ids_and_exclusion_keeps_content(client, recor
     identifiers = {item["content_id"]: item["curriculum_content_id"] for item in original["items"]}
     # 즉시 UNIQUE 검사 모드에서도 순번 교환이 충돌하지 않아야 한다.
     database.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
-    reordered = client.put(path, headers=headers(records), json={"content_ids": ids[::-1]})
+    reordered = client.put(
+        path,
+        headers=headers(records),
+        json=course_edit_body(client, path, headers(records), {"content_ids": ids[::-1]}),
+    )
     assert reordered.status_code == 200, reordered.text
     assert [item["content_id"] for item in reordered.json()["items"]] == ids[::-1]
     assert [item["step_order"] for item in reordered.json()["items"]] == [1, 2, 3]
@@ -341,10 +362,18 @@ def test_reordering_preserves_step_ids_and_exclusion_keeps_content(client, recor
         for item in reordered.json()["items"]
     )
     assert (
-        client.put(path, headers=headers(records), json={"content_ids": [ids[1]]}).status_code
+        client.put(
+            path,
+            headers=headers(records),
+            json=course_edit_body(client, path, headers(records), {"content_ids": [ids[1]]}),
+        ).status_code
         == 200
     )
-    cleared = client.put(path, headers=headers(records), json={"content_ids": []}).json()
+    cleared = client.put(
+        path,
+        headers=headers(records),
+        json=course_edit_body(client, path, headers(records), {"content_ids": []}),
+    ).json()
     assert cleared.pop("updated_at")
     assert cleared == {
         "items": [],
@@ -361,12 +390,21 @@ def test_invalid_step_replacement_keeps_existing_composition(client, records):
         ([ids[0], ids[0]], 422, "DUPLICATE_CONTENT"),
         ([ids[0], 999999], 404, "CONTENT_NOT_FOUND"),
     ):
-        response = client.put(path, headers=headers(records), json={"content_ids": content_ids})
+        response = client.put(
+            path,
+            headers=headers(records),
+            json=course_edit_body(client, path, headers(records), {"content_ids": content_ids}),
+        )
         assert response.status_code == status and response.json()["detail"]["code"] == code
         current = client.get(path + "?view=editor", headers=headers(records)).json()
         assert [item["content_id"] for item in current["items"]] == ids
     assert (
-        client.put(path, headers=headers(records), json={"content_ids": [True]}).status_code == 422
+        client.put(
+            path,
+            headers=headers(records),
+            json=course_edit_body(client, path, headers(records), {"content_ids": [True]}),
+        ).status_code
+        == 422
     )
 
 
@@ -457,7 +495,11 @@ def test_step_failure_rolls_back_reordering(client, records, database, monkeypat
 
     monkeypatch.setattr(curricula_repository, "replace_steps", fail)
     path = f"/api/curriculums/{course}/steps"
-    response = client.put(path, headers=headers(records), json={"content_ids": ids[::-1]})
+    response = client.put(
+        path,
+        headers=headers(records),
+        json=course_edit_body(client, path, headers(records), {"content_ids": ids[::-1]}),
+    )
     assert response.status_code == 500
     result = client.get(path + "?view=editor", headers=headers(records)).json()
     assert [item["content_id"] for item in result["items"]] == ids
@@ -549,3 +591,241 @@ def test_stale_edit_cannot_overwrite_content_or_steps(client, records):
         ).status_code
         == 409
     )
+
+
+@pytest.fixture
+def thumbnail_requests(client, database, monkeypatch):
+    # 공유 세션의 읽기 트랜잭션을 실제 get_db의 요청 종료처럼 정리한다.
+    request = client.request
+
+    def isolated_request(*args, **kwargs):
+        try:
+            return request(*args, **kwargs)
+        finally:
+            if database.in_transaction():
+                database.rollback()
+
+    monkeypatch.setattr(client, "request", isolated_request)
+
+
+def thumbnail_bytes(color):
+    from io import BytesIO
+
+    from PIL import Image
+
+    data = BytesIO()
+    with Image.new("RGB", (16, 16), color) as image:
+        image.save(data, format="PNG")
+    return data.getvalue()
+
+
+def put_image(client, records, path, color="red"):
+    data = thumbnail_bytes(color)
+    result = client.put(path, headers=headers(records), files={"file": ("image.png", data)})
+    assert result.status_code == 204, result.text
+    return data
+
+
+def course_summary(client, records, course):
+    response = client.get(f"/api/curriculums/{course}?view=editor", headers=headers(records))
+    assert response.status_code == 200, response.text
+    return response.json()["summary"]
+
+
+def test_first_content_thumbnail_follows_reorder_replace_and_delete(
+    client, records, thumbnail_requests
+):
+    first, second = records["contents"][:2]
+    first_path = f"/api/contents/{first}/thumbnail"
+    second_path = f"/api/contents/{second}/thumbnail"
+    red = put_image(client, records, first_path)
+    blue = put_image(client, records, second_path, "blue")
+    course = create_course(client, records, [first, second])
+    path = f"/api/curriculums/{course}"
+    original = course_summary(client, records, course)
+    old_url = original["thumbnail_url"]
+    assert old_url == path + f"/thumbnail?preview=true&actor_id={records['admin']}"
+    image = client.get(old_url)
+    assert image.content == red
+    assert (
+        client.get("/api/curriculums", headers=headers(records, "user1")).json()["items"][0][
+            "thumbnail_url"
+        ]
+        == old_url.split("?")[0]
+    )
+    detail = client.get(path + "?view=editor", headers=headers(records)).json()
+    assert client.get(detail["steps"][0]["content"]["thumbnail_url"]).content == red
+    result = client.put(
+        path + "/steps",
+        headers=headers(records),
+        json={
+            "content_ids": [second, first],
+            "expected_updated_at": original["updated_at"],
+        },
+    )
+    assert result.status_code == 200, result.text
+    assert client.get(old_url).content == blue
+    new_url = course_summary(client, records, course)["thumbnail_url"]
+    assert new_url == old_url and client.get(new_url).content == blue
+    green = put_image(client, records, second_path, "green")
+    replaced = course_summary(client, records, course)["thumbnail_url"]
+    assert replaced == new_url and client.get(replaced).content == green
+    assert client.delete(second_path, headers=headers(records)).status_code == 204
+    assert course_summary(client, records, course)["thumbnail_url"] is None
+    assert client.get(path + "/thumbnail").status_code == 404
+    assert client.get(first_path).content == red  # 두 번째 영상으로 임의 대체하지 않는다.
+    assert (
+        client.put(
+            path + "/steps",
+            headers=headers(records),
+            json=course_edit_body(
+                client,
+                path + "/steps",
+                headers(records),
+                {
+                    "content_ids": [first],
+                },
+            ),
+        ).status_code
+        == 200
+    )
+    assert client.get(course_summary(client, records, course)["thumbnail_url"]).content == red
+    assert (
+        client.put(
+            path + "/steps",
+            headers=headers(records),
+            json=course_edit_body(client, path + "/steps", headers(records), {"content_ids": []}),
+        ).status_code
+        == 200
+    )
+    assert course_summary(client, records, course)["thumbnail_url"] is None
+
+
+def test_direct_thumbnail_overrides_first_content_until_deleted(
+    client, records, thumbnail_requests
+):
+    first, second = records["contents"][:2]
+    first_path = f"/api/contents/{first}/thumbnail"
+    second_path = f"/api/contents/{second}/thumbnail"
+    first_image = put_image(client, records, first_path)
+    put_image(client, records, second_path, "green")
+    course = create_course(client, records, [first, second])
+    path = f"/api/curriculums/{course}"
+    direct = put_image(client, records, path + "/thumbnail", "blue")
+    saved = course_summary(client, records, course)
+    assert client.get(saved["thumbnail_url"]).content == direct
+    # 직접 등록한 이미지는 첫 영상 변경과 그 영상의 이미지 교체에 영향받지 않는다.
+    assert (
+        client.put(
+            path + "/steps",
+            headers=headers(records),
+            json=course_edit_body(
+                client, path + "/steps", headers(records), {"content_ids": [second, first]}
+            ),
+        ).status_code
+        == 200
+    )
+    second_image = put_image(client, records, second_path, "yellow")
+    assert client.get(saved["thumbnail_url"]).content == direct
+    replacement = put_image(client, records, path + "/thumbnail", "purple")
+    assert client.get(saved["thumbnail_url"]).content == replacement
+    assert (
+        client.get("/api/curriculums", headers=headers(records)).json()["items"][0]["thumbnail_url"]
+        == saved["thumbnail_url"].split("?")[0]
+    )
+    before_delete = course_summary(client, records, course)
+    assert client.delete(path + "/thumbnail", headers=headers(records)).status_code == 204
+    cleared = course_summary(client, records, course)
+    assert cleared["updated_at"] == before_delete["updated_at"]
+    assert client.get(cleared["thumbnail_url"]).content == second_image
+    # 자동 참조 이미지는 시리즈 삭제 API로 지우지 않는다.
+    assert client.delete(path + "/thumbnail", headers=headers(records)).status_code == 404
+    assert client.get(first_path).content == first_image
+    assert client.get(second_path).content == second_image
+
+
+def test_empty_series_direct_thumbnail_and_delete(client, records, thumbnail_requests):
+    result = client.post("/api/curriculums", headers=headers(records), json={"title": "빈 시리즈"})
+    assert result.status_code == 201, result.text
+    summary = result.json()["summary"]
+    assert summary["thumbnail_url"] is None
+    course = summary["curriculum_id"]
+    path = f"/api/curriculums/{course}"
+    direct = put_image(client, records, path + "/thumbnail")
+    after_upload = course_summary(client, records, course)
+    assert client.get(after_upload["thumbnail_url"]).content == direct
+    assert after_upload["updated_at"] == summary["updated_at"]
+    result = client.patch(
+        path,
+        headers=headers(records),
+        json={
+            "title": "썸네일 업로드 후 편집",
+            "expected_updated_at": summary["updated_at"],
+        },
+    )
+    assert result.status_code == 200, result.text
+    assert client.delete(path + "/thumbnail", headers=headers(records)).status_code == 204
+    assert course_summary(client, records, course)["thumbnail_url"] is None
+    assert client.get(path + "/thumbnail").status_code == 404
+
+
+def test_thumbnail_changes_require_admin(client, records, thumbnail_requests):
+    course = create_course(client, records)
+    path = f"/api/curriculums/{course}/thumbnail"
+    result = client.put(
+        path,
+        headers=headers(records, "user1"),
+        files={
+            "file": ("image.png", thumbnail_bytes("red")),
+        },
+    )
+    assert result.status_code == 403, result.text
+    assert client.delete(path, headers=headers(records, "user1")).status_code == 403
+
+
+@pytest.mark.parametrize("null_version", [False, True])
+def test_all_edit_endpoints_require_version(client, records, null_version):
+    course = create_course(client, records)
+    requests = [
+        ("PATCH", f"/api/contents/{records['contents'][2]}", {"title": "edited"}),
+        ("PATCH", f"/api/curriculums/{course}", {"title": "edited"}),
+        ("PUT", f"/api/curriculums/{course}/steps", {"content_ids": []}),
+    ]
+    for method, path, body in requests:
+        if null_version:
+            body["expected_updated_at"] = None
+        result = client.request(method, path, headers=headers(records), json=body)
+        assert result.status_code == 422, result.text
+        assert any(
+            f["field"] == "body.expected_updated_at" for f in result.json()["detail"]["fields"]
+        )
+
+
+def test_draft_images_are_admin_preview_only(client, records, thumbnail_requests):
+    draft, published = records["contents"][2], records["contents"][0]
+    path = f"/api/contents/{draft}/thumbnail"
+    data = put_image(client, records, path)
+    assert client.get(path).status_code == 404
+    assert client.get(path + f"?actor_id={records['admin']}").status_code == 404
+    assert client.get(path + "?preview=true").status_code == 422
+    assert client.get(path + f"?preview=true&actor_id={records['user1']}").status_code == 403
+    detail = client.get(f"/api/contents/{draft}?view=editor", headers=headers(records)).json()
+    image = client.get(detail["detail"]["content"]["thumbnail_url"])
+    assert image.content == data
+    assert image.headers["cache-control"] == "private, no-store"
+
+    course = create_course(client, records, [draft, published])
+    course_path = f"/api/curriculums/{course}"
+    public = client.get(course_path, headers=headers(records, "user1")).json()
+    assert public["summary"]["thumbnail_url"] is None
+    assert client.get(course_path + "/thumbnail").status_code == 404
+    assert client.get(course_summary(client, records, course)["thumbnail_url"]).content == data
+    direct = put_image(client, records, course_path + "/thumbnail", "blue")
+    public = client.get(course_path, headers=headers(records, "user1")).json()
+    assert client.get(public["summary"]["thumbnail_url"]).content == direct
+
+    empty = create_course(client, records)
+    empty_path = f"/api/curriculums/{empty}/thumbnail"
+    put_image(client, records, empty_path)
+    assert client.get(empty_path).status_code == 404
+    assert client.get(course_summary(client, records, empty)["thumbnail_url"]).status_code == 200

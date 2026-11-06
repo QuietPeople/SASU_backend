@@ -5,6 +5,25 @@ from sqlalchemy.orm import Session
 
 from app.modules.curricula.tables import curricula, curriculum_items
 
+_SUMMARY_SELECT = """
+    SELECT c.*, COALESCE(c.thumbnail_image_id, (
+        SELECT content.thumbnail_image_id
+        FROM sasu.curriculum_items i JOIN sasu.contents content USING (content_id)
+        WHERE i.curriculum_id = c.curriculum_id ORDER BY i.position LIMIT 1
+    )) AS resolved_thumbnail_image_id,
+    COALESCE(c.thumbnail_image_id, (
+        SELECT CASE WHEN content.status = 'PUBLISHED' THEN content.thumbnail_image_id END
+        FROM sasu.curriculum_items i JOIN sasu.contents content USING (content_id)
+        WHERE i.curriculum_id = c.curriculum_id ORDER BY i.position LIMIT 1
+    )) AS public_thumbnail_image_id
+    FROM sasu.curricula c
+"""
+
+_SEARCH_WHERE = """
+    WHERE (:q = '' OR strpos(lower(c.title), lower(:q)) > 0
+        OR strpos(lower(COALESCE(c.description, '')), lower(:q)) > 0)
+"""
+
 
 def learner_exists(session: Session, user_id: int) -> bool:
     return bool(
@@ -18,16 +37,25 @@ def learner_exists(session: Session, user_id: int) -> bool:
 
 
 def find_curriculum(session: Session, curriculum_id: int, lock: bool = False):
-    statement = "SELECT * FROM sasu.curricula WHERE curriculum_id = :id"
+    statement = _SUMMARY_SELECT + " WHERE c.curriculum_id = :id"
     if lock:
-        statement += " FOR UPDATE"
+        statement += " FOR UPDATE OF c"
     return session.execute(text(statement), {"id": curriculum_id}).mappings().one_or_none()
 
 
-def list_curricula(session: Session):
+def count_curricula(session: Session, q: str) -> int:
+    return session.scalar(text("SELECT count(*) FROM sasu.curricula c" + _SEARCH_WHERE), {"q": q})
+
+
+def list_curricula(session: Session, q: str, *, offset: int = 0, limit: int | None = None):
     return (
         session.execute(
-            text("SELECT * FROM sasu.curricula ORDER BY created_at DESC, curriculum_id")
+            text(
+                _SUMMARY_SELECT
+                + _SEARCH_WHERE
+                + " ORDER BY c.created_at DESC, c.curriculum_id LIMIT :limit OFFSET :offset"
+            ),
+            {"q": q, "limit": limit, "offset": offset},
         )
         .mappings()
         .all()
@@ -42,10 +70,16 @@ def create_curriculum(session: Session, title: str, description: str | None) -> 
     )
 
 
-def update_curriculum(session: Session, curriculum_id: int, title: str, description: str | None):
+def update_curriculum(
+    session: Session,
+    curriculum_id: int,
+    title: str,
+    description: str | None,
+):
     session.execute(
         text("""UPDATE sasu.curricula SET title = :title, description = :description,
-                updated_at = clock_timestamp() WHERE curriculum_id = :id"""),
+                updated_at = clock_timestamp()
+                WHERE curriculum_id = :id"""),
         {"id": curriculum_id, "title": title, "description": description},
     )
 
@@ -58,6 +92,7 @@ def load_steps(session: Session, curriculum_ids: list[int], user_id: int | None)
             text(
                 """
             SELECT i.curriculum_id, i.position, c.content_id, c.title, c.status,
+                   c.thumbnail_image_id,
                    c.category_id, category.name AS category_name,
                    asset.video_asset_id, asset.storage_path, asset.duration_seconds,
                    asset.size_bytes, asset.mime_type,
@@ -150,7 +185,9 @@ def related_to_content(session: Session, content_id: int) -> list[dict]:
     return [dict(row._mapping) for row in rows]
 
 
-def list_step_states(session: Session, user_id: int | None):
+def list_step_states(session: Session, curriculum_ids: list[int], user_id: int | None):
+    if not curriculum_ids:
+        return []
     return session.execute(
         text("""
         SELECT i.curriculum_id, c.status, asset.storage_path, asset.size_bytes,
@@ -163,6 +200,7 @@ def list_step_states(session: Session, user_id: int | None):
         FROM sasu.curriculum_items i JOIN sasu.contents c USING(content_id)
         LEFT JOIN sasu.video_assets asset USING(video_asset_id)
         LEFT JOIN sasu.watch_records w ON w.content_id=c.content_id AND w.user_id=:user
+        WHERE i.curriculum_id = ANY(CAST(:ids AS bigint[]))
     """),
-        {"user": user_id},
+        {"ids": curriculum_ids, "user": user_id},
     ).mappings()

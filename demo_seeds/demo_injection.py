@@ -1,5 +1,5 @@
 # 데모 삽입용 스크립트. 필요 없어지면 demo_seeds/ 및 전용 테스트와 함께 제거할 수 있다.
-"""원본 파일명의 demo_seeds/videos 영상을 서버 저장소로 복사한 뒤 seed.sql을 적용한다.
+"""demo_seeds의 영상·썸네일을 서버 저장소로 복사한 뒤 seed.sql을 적용한다.
 
 DB 구조는 기존 Alembic 절차로 먼저 준비한다. 서버 시작 시 자동 실행하지 않는다.
 실행: docker compose run --rm -v ./demo_seeds:/app/demo_seeds:ro \
@@ -11,6 +11,7 @@ import json
 import shutil
 import unicodedata
 from pathlib import Path
+from typing import NamedTuple
 
 from sqlalchemy import text
 
@@ -21,20 +22,27 @@ from app.integrations.storage import LocalVideoStorage
 BUNDLE_ROOT = Path(__file__).resolve().parent
 
 
+class SeedResult(NamedTuple):
+    videos: int
+    thumbnails: int
+
+
 def file_digest(path: Path) -> str:
     with path.open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def prepare_videos(records: list[dict], bundle_root: Path, storage_root: Path) -> list[tuple]:
+def prepare_files(
+    records: list[dict], source_root: Path, storage_root: Path, label: str
+) -> list[tuple]:
     storage = LocalVideoStorage(storage_root)
     sources = {}
-    for source in (bundle_root / "videos").glob("*"):
+    for source in source_root.glob("*"):
         if not source.is_file():
             continue
         name = unicodedata.normalize("NFC", source.name)
         if name in sources:
-            raise RuntimeError(f"같은 이름의 데모 영상이 여러 개입니다: {name}")
+            raise RuntimeError(f"같은 이름의 데모 {label}이 여러 개입니다: {name}")
         sources[name] = source
 
     prepared = []
@@ -46,9 +54,25 @@ def prepare_videos(records: list[dict], bundle_root: Path, storage_root: Path) -
             or source.stat().st_size != item["size_bytes"]
             or file_digest(source) != item["sha256"]
         ):
-            raise RuntimeError(f"데모 영상이 없거나 SQL과 다릅니다: {name}")
+            raise RuntimeError(f"데모 {label}이 없거나 SQL과 다릅니다: {name}")
         prepared.append((source, storage.resolve_path(item["storage_path"]), item["sha256"]))
     return prepared
+
+
+def copy_files(prepared: list[tuple], created: list[Path], label: str) -> int:
+    count = 0
+    for source, destination, digest in prepared:
+        if destination.exists():
+            if not destination.is_file() or file_digest(destination) != digest:
+                raise RuntimeError(f"기존 서버 {label}과 충돌합니다: {destination.name}")
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with destination.open("xb") as output:
+            created.append(destination)
+            with source.open("rb") as input_file:
+                shutil.copyfileobj(input_file, output)
+        count += 1
+    return count
 
 
 def verify_stored_videos(connection, storage_root: Path) -> None:
@@ -85,9 +109,34 @@ def verify_stored_videos(connection, storage_root: Path) -> None:
         )
 
 
-def apply_demo_seed(engine, bundle_root: Path, storage_root: Path) -> int:
+def verify_stored_thumbnails(connection, storage_root: Path, asset_ids: list[str]) -> None:
+    storage = LocalVideoStorage(storage_root)
+    rows = connection.execute(
+        text(
+            "SELECT c.content_id, a.storage_path, a.size_bytes "
+            "FROM sasu.contents c JOIN sasu.image_assets a "
+            "ON a.image_asset_id = c.thumbnail_image_id "
+            "WHERE c.video_asset_id = ANY(CAST(:asset_ids AS uuid[]))"
+        ),
+        {"asset_ids": asset_ids},
+    ).mappings()
+    for row in rows:
+        try:
+            path = storage.resolve_path(row["storage_path"])
+            if not path.is_file() or path.stat().st_size != row["size_bytes"]:
+                raise ValueError("파일이 없거나 크기가 DB 기록과 다릅니다.")
+            with path.open("rb"):
+                pass
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise RuntimeError(
+                f"서버 썸네일 확인 실패: 콘텐츠 {row['content_id']} / {row['storage_path']}"
+            ) from exc
+
+
+def apply_demo_seed(engine, bundle_root: Path, storage_root: Path, image_root: Path) -> SeedResult:
     sql = (bundle_root / "seed.sql").read_text()
     records = json.loads(sql.split("$sasu_demo_data$")[1])["contents"]
+    asset_ids = [item["video_asset_id"] for item in records]
     created = []
     try:
         with engine.begin() as connection:
@@ -98,28 +147,43 @@ def apply_demo_seed(engine, bundle_root: Path, storage_root: Path) -> int:
                     "SELECT count(*) FROM sasu.video_assets "
                     "WHERE video_asset_id = ANY(CAST(:asset_ids AS uuid[]))"
                 ),
-                {"asset_ids": [item["video_asset_id"] for item in records]},
+                {"asset_ids": asset_ids},
             )
             if existing:
-                # 영상은 유지하고 미적용 학습 데모만 SQL에서 보강한다. 영상 일부만 있으면 거부한다.
-                connection.exec_driver_sql(sql, execution_options={"no_parameters": True})
-                verify_stored_videos(connection, storage_root)
-                return 0
-
-            prepared = prepare_videos(records, bundle_root, storage_root)
-            for source, destination, digest in prepared:
-                if destination.exists():
-                    if not destination.is_file() or file_digest(destination) != digest:
-                        raise RuntimeError(f"기존 서버 영상과 충돌합니다: {destination.name}")
-                    continue
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                with destination.open("xb") as output:
-                    created.append(destination)
-                    with source.open("rb") as input_file:
-                        shutil.copyfileobj(input_file, output)
+                # 교체한 영상·기존 이미지는 유지하고, 원본 데모 영상의 빈 썸네일만 보강한다.
+                missing = set(
+                    map(
+                        str,
+                        connection.scalars(
+                            text(
+                                "SELECT video_asset_id FROM sasu.contents "
+                                "WHERE thumbnail_image_id IS NULL "
+                                "AND video_asset_id = ANY(CAST(:asset_ids AS uuid[]))"
+                            ),
+                            {"asset_ids": asset_ids},
+                        ),
+                    )
+                )
+                videos = []
+            else:
+                missing = set(asset_ids)
+                videos = prepare_files(records, bundle_root / "videos", storage_root, "영상")
+            thumbnails = prepare_files(
+                [
+                    item["thumbnail"]
+                    for item in records
+                    if item["video_asset_id"] in missing and "thumbnail" in item
+                ],
+                bundle_root / "thumbnails",
+                image_root,
+                "썸네일",
+            )
+            video_count = copy_files(videos, created, "영상")
+            image_count = copy_files(thumbnails, created, "썸네일")
             connection.exec_driver_sql(sql, execution_options={"no_parameters": True})
             verify_stored_videos(connection, storage_root)
-        return len(created)
+            verify_stored_thumbnails(connection, image_root, asset_ids)
+        return SeedResult(video_count, image_count)
     except BaseException:
         # 이번 호출에서 만든 사본만 정리한다. 기존 서버 파일과 배포 원본은 유지한다.
         for path in created:
@@ -129,8 +193,14 @@ def apply_demo_seed(engine, bundle_root: Path, storage_root: Path) -> int:
 
 def main() -> None:
     try:
-        count = apply_demo_seed(get_engine(), BUNDLE_ROOT, get_settings().video_storage_root)
-        print(f"데모 seed 처리 완료: 서버 영상 {count}개 복사. 이미 적용된 데이터는 유지합니다.")
+        settings = get_settings()
+        result = apply_demo_seed(
+            get_engine(), BUNDLE_ROOT, settings.video_storage_root, settings.image_storage_root
+        )
+        print(
+            f"데모 seed 처리 완료: 서버 영상 {result.videos}개, 썸네일 {result.thumbnails}개 복사. "
+            "이미 적용된 데이터는 유지합니다."
+        )
     except RuntimeError as exc:
         raise SystemExit(f"데모 seed 처리 중단: {exc}") from None
     finally:

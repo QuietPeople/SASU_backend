@@ -8,9 +8,11 @@ import pytest
 from alembic.config import Config
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import DBAPIError
+from sqlalchemy.orm import Session
 
 from alembic import command
 from app.core.config import PROJECT_ROOT, get_settings
+from app.modules.curricula.repository import find_curriculum
 
 demo_injection = pytest.importorskip(
     "demo_seeds.demo_injection",
@@ -108,6 +110,7 @@ def test_empty_tables_receive_complete_demo_without_changing_schema_revision(dat
         "tags": 42,
         "contents": 25,
         "video_assets": 25,
+        "image_assets": 25,
         "content_tags": 50,
         "quizzes": 25,
         "quiz_versions": 28,
@@ -394,20 +397,34 @@ def test_original_video_bundle_is_copied_and_connected_atomically(
         pytest.skip("원본 영상 묶음을 준비한 경우에만 복사·DB 연결을 검증")
 
     server = tmp_path / "server-videos"
-    assert demo_injection.apply_demo_seed(seed_engine, bundle, server) == 25
+    images = tmp_path / "server-images"
+    assert demo_injection.apply_demo_seed(seed_engine, bundle, server, images) == (25, 25)
     database.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
     assert database.scalar(text("SELECT count(*) FROM sasu.contents")) == 25
-    assert demo_injection.apply_demo_seed(seed_engine, bundle, server) == 0
+    assert demo_injection.apply_demo_seed(seed_engine, bundle, server, images) == (0, 0)
     for item in json.loads(seed_sql.split("$sasu_demo_data$")[1])["contents"]:
         path = server / item["storage_path"]
         assert path.stat().st_size == item["size_bytes"]
         assert demo_injection.file_digest(path) == item["sha256"]
+        thumbnail = item["thumbnail"]
+        image_path = images / thumbnail["storage_path"]
+        assert image_path.stat().st_size == thumbnail["size_bytes"]
+        assert demo_injection.file_digest(image_path) == thumbnail["sha256"]
+        assert (
+            str(
+                database.scalar(
+                    text("SELECT thumbnail_image_id FROM sasu.contents WHERE video_asset_id=:id"),
+                    {"id": item["video_asset_id"]},
+                )
+            )
+            == thumbnail["image_asset_id"]
+        )
 
 
-def stored_video_files(database, server):
+def stored_video_files(database, server, *, table="video_assets"):
     rows = (
         database.execute(
-            text("SELECT storage_path, size_bytes FROM sasu.video_assets ORDER BY storage_path")
+            text(f"SELECT storage_path, size_bytes FROM sasu.{table} ORDER BY storage_path")
         )
         .mappings()
         .all()
@@ -433,7 +450,9 @@ def test_invalid_current_video_rolls_back_learning_enrichment(
         broken.write_bytes(b"truncated")
     before = snapshot(database)
     with pytest.raises(RuntimeError, match="서버 영상 확인 실패"):
-        demo_injection.apply_demo_seed(seed_engine, PROJECT_ROOT / "demo_seeds", server)
+        demo_injection.apply_demo_seed(
+            seed_engine, PROJECT_ROOT / "demo_seeds", server, tmp_path / "images"
+        )
     assert snapshot(database) == before
     assert database.scalar(text("SELECT count(*) FROM sasu.quizzes")) == 0
     if state == "missing":
@@ -448,6 +467,8 @@ def test_replaced_video_uses_current_database_metadata_and_ignores_old_asset(
     apply_seed(database, seed_sql)
     server = tmp_path / "server"
     stored_video_files(database, server)
+    images = tmp_path / "images"
+    stored_video_files(database, images, table="image_assets")
     old = (
         database.execute(
             text(
@@ -477,7 +498,92 @@ def test_replaced_video_uses_current_database_metadata_and_ignores_old_asset(
     old_path = server / old["storage_path"]
     old_path.unlink()
     before = snapshot(database)
-    assert demo_injection.apply_demo_seed(seed_engine, PROJECT_ROOT / "demo_seeds", server) == 0
+    assert demo_injection.apply_demo_seed(
+        seed_engine, PROJECT_ROOT / "demo_seeds", server, images
+    ) == (0, 0)
     assert snapshot(database) == before
     assert new_path.read_bytes() == b"new media"
     assert not old_path.exists()
+
+
+def without_thumbnails(sql):
+    parts = sql.split("$sasu_demo_data$")
+    data = json.loads(parts[1])
+    for item in data["contents"]:
+        item.pop("thumbnail", None)
+    parts[1] = json.dumps(data, ensure_ascii=False)
+    return "$sasu_demo_data$".join(parts)
+
+
+def test_thumbnail_update_enriches_existing_demo_once_without_resetting_records(
+    database, seed_sql, tmp_path, seed_engine
+):
+    apply_seed(database, without_thumbnails(seed_sql))
+    server = tmp_path / "videos"
+    images = tmp_path / "images"
+    stored_video_files(database, server)
+    before = snapshot(database)
+    assert demo_injection.apply_demo_seed(
+        seed_engine, PROJECT_ROOT / "demo_seeds", server, images
+    ) == (0, 25)
+    after = snapshot(database)
+    for table in before.keys() - {"contents", "image_assets"}:
+        assert after[table] == before[table]
+    assert (
+        database.scalar(
+            text("SELECT count(*) FROM sasu.contents WHERE thumbnail_image_id IS NOT NULL")
+        )
+        == 25
+    )
+    assert demo_injection.apply_demo_seed(
+        seed_engine, PROJECT_ROOT / "demo_seeds", server, images
+    ) == (0, 0)
+    assert snapshot(database) == after
+
+
+def test_seed_does_not_replace_manual_content_or_series_thumbnail(database, seed_sql):
+    apply_seed(database, without_thumbnails(seed_sql))
+    manual = uuid4()
+    database.execute(
+        text(
+            "INSERT INTO sasu.image_assets (image_asset_id, storage_path, mime_type, size_bytes) "
+            "VALUES (:id, 'manual.jpg', 'image/jpeg', 123)"
+        ),
+        {"id": manual},
+    )
+    database.execute(
+        text("UPDATE sasu.contents SET thumbnail_image_id=:id WHERE content_id=1"), {"id": manual}
+    )
+    database.execute(
+        text("UPDATE sasu.curricula SET thumbnail_image_id=:id WHERE curriculum_id=1"),
+        {"id": manual},
+    )
+    apply_seed(database, seed_sql)
+    assert (
+        database.scalar(text("SELECT thumbnail_image_id FROM sasu.contents WHERE content_id=1"))
+        == manual
+    )
+    assert (
+        database.scalar(text("SELECT thumbnail_image_id FROM sasu.curricula WHERE curriculum_id=1"))
+        == manual
+    )
+    assert database.scalar(text("SELECT count(*) FROM sasu.image_assets")) == 25
+
+
+def test_series_resolves_first_content_thumbnail_without_separate_image(database, seed_sql):
+    apply_seed(database, seed_sql)
+    first_images = database.execute(
+        text(
+            "SELECT i.curriculum_id, c.thumbnail_image_id FROM sasu.curriculum_items i "
+            "JOIN sasu.contents c USING(content_id) WHERE i.position=1"
+        )
+    ).all()
+    assert len(first_images) == 6
+    with Session(bind=database, join_transaction_mode="create_savepoint") as session:
+        for curriculum_id, image_id in first_images:
+            series = find_curriculum(session, curriculum_id)
+            assert image_id is not None
+            assert series["thumbnail_image_id"] is None
+            assert series["resolved_thumbnail_image_id"] == image_id
+            assert series["public_thumbnail_image_id"] == image_id
+    assert database.scalar(text("SELECT count(*) FROM sasu.image_assets")) == 25

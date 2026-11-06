@@ -1,5 +1,5 @@
 from app.modules.contents.schemas import ContentSummary
-from app.modules.contents.urls import build_video_url
+from app.modules.contents.urls import build_thumbnail_url, build_video_url
 
 
 def build_summary(row, actor_id: int, *, preview: bool = False) -> ContentSummary:
@@ -26,5 +26,10 @@ def build_summary(row, actor_id: int, *, preview: bool = False) -> ContentSummar
         watch_completed=row["watch_completed"],
         has_quiz=row["has_quiz"],
         status=row["status"],
-        thumbnail_url=row.get("thumbnail_url"),
+        thumbnail_url=build_thumbnail_url(
+            "contents",
+            row["content_id"],
+            row.get("thumbnail_image_id"),
+            preview_actor_id=actor_id if preview else None,
+        ),
     )

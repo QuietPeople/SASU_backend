@@ -3,6 +3,7 @@ from io import BytesIO
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
@@ -17,7 +18,7 @@ from app.integrations import ffmpeg
 from app.integrations.storage import LocalVideoStorage
 from app.modules.categories.models import Category
 from app.modules.contents import repository
-from app.modules.contents.models import Content, ContentTag, VideoAsset
+from app.modules.contents.models import Content, ContentTag, ImageAsset, VideoAsset
 from app.modules.tags.models import Tag
 from app.modules.users.models import User, UserRole
 from app.modules.videos import service as video_processing
@@ -27,6 +28,31 @@ from app.modules.videos.service import VideoIngestService, get_video_ingest_serv
 
 # 파일 시그니처 판별(MP4 계열)은 통과하고 ffprobe 단계까지 가는 최소 입력
 ISO_BMFF_HEAD = b"\x00\x00\x00\x18ftypisom" + b"\x00" * 64
+
+
+def test_invalid_thumbnail_replacement_keeps_existing_asset(upload_context, monkeypatch, tmp_path):
+    client, factory, ids = upload_context
+    monkeypatch.setattr(get_settings(), "image_storage_root", tmp_path / "images")
+    content_id = create_draft(client, ids["admin"])
+    data = BytesIO()
+    with Image.new("RGB", (16, 16), "red") as image:
+        image.save(data, format="PNG")
+    url = f"/api/contents/{content_id}/thumbnail"
+    headers = {"X-Actor-Id": str(ids["admin"])}
+    response = client.put(url, headers=headers, files={"file": ("image.png", data.getvalue())})
+    assert response.status_code == 204, response.text
+    with factory() as session:
+        original_id = session.get(Content, content_id).thumbnail_image_id
+    files_before = sorted((tmp_path / "images").iterdir())
+    response = client.put(
+        url, headers=headers, files={"file": ("broken.png", b"\x89PNG\r\n\x1a\n")}
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"]["code"] == "INVALID_IMAGE"
+    with factory() as session:
+        assert session.get(Content, content_id).thumbnail_image_id == original_id
+    assert sorted((tmp_path / "images").iterdir()) == files_before
+    assert client.get(url + f"?preview=true&actor_id={ids['admin']}").content == data.getvalue()
 
 
 @pytest.fixture
@@ -64,9 +90,7 @@ def upload_context(monkeypatch, stub_video_ingest):
             yield session
 
     monkeypatch.setitem(main.app.dependency_overrides, get_db, provide_session)
-    monkeypatch.setitem(
-        main.app.dependency_overrides, get_video_ingest_service, stub_video_ingest
-    )
+    monkeypatch.setitem(main.app.dependency_overrides, get_video_ingest_service, stub_video_ingest)
     client = TestClient(main.app)
     try:
         yield client, factory, ids
@@ -220,9 +244,7 @@ def test_other_upload_completed_during_processing_keeps_winner(
             assert winner.status_code == 200, winner.text
             return result
 
-    monkeypatch.setitem(
-        main.app.dependency_overrides, get_video_ingest_service, InterleavedIngest
-    )
+    monkeypatch.setitem(main.app.dependency_overrides, get_video_ingest_service, InterleavedIngest)
     response = upload(client, ids["admin"], content_id, b"loser")
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "VIDEO_ALREADY_EXISTS"
@@ -326,6 +348,9 @@ def test_database_failure_rolls_back_and_removes_new_file(
     with factory() as session:
         assert session.get(Content, content_id).video_asset_id is None
         assert session.scalar(select(func.count()).select_from(VideoAsset)) == 0
+        assert session.scalar(select(func.count()).select_from(ImageAsset)) == 0
+    image_root = get_settings().image_storage_root
+    assert not image_root.exists() or list(image_root.iterdir()) == []
 
 
 def test_unknown_content_does_not_create_file(upload_context, stored_files):
@@ -449,3 +474,5 @@ def test_video_policy_reports_upload_limits(upload_context):
     assert body["max_bytes"] == 200 * 1024 * 1024
     assert (body["min_duration_sec"], body["max_duration_sec"]) == (1.0, 180.0)
     assert ".mp4" in body["accept"]
+    assert body["max_long_edge_px"] == 3840
+    assert body["target_long_edge_px"] == 2160

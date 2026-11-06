@@ -15,6 +15,7 @@ alembic==1.18.1
 
 # File uploads
 python-multipart==0.0.22
+Pillow==13.0.0
 
 # Development and testing
 ruff==0.15.6

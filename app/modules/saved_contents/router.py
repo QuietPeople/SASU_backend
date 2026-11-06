@@ -9,9 +9,7 @@ from app.api.dependencies import (
     ResourceId,
     reject_query_parameters,
 )
-from app.core.config import get_settings
 from app.core.exceptions import ErrorResponse
-from app.integrations.storage import LocalVideoStorage
 from app.modules.saved_contents import service
 from app.modules.saved_contents.schemas import (
     SavedContentsPage,
@@ -81,7 +79,8 @@ def unsave_content(
     summary="API-SAV-03 저장 콘텐츠 목록",
     description=(
         "본인 또는 관리자가 대상 학습자의 저장 목록을 조회합니다. 최신 저장순이며 "
-        "비공개·재생 불가 콘텐츠는 제외합니다. 조회로 저장 관계를 삭제하지 않습니다."
+        "비공개 콘텐츠는 제외합니다. 전체 개수와 페이지는 DB 조회 조건을 기준으로 계산하며 "
+        "영상 파일 상태는 실제 재생 요청에서 확인합니다. 조회로 저장 관계를 삭제하지 않습니다."
     ),
 )
 def saved_contents(
@@ -90,6 +89,4 @@ def saved_contents(
     session: Database,
     actor_id: ActorId,
 ) -> SavedContentsPage:
-    return service.list_saved_contents(
-        session, actor_id, user_id, query, LocalVideoStorage(get_settings().video_storage_root)
-    )
+    return service.list_saved_contents(session, actor_id, user_id, query)

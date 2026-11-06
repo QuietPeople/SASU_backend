@@ -27,6 +27,7 @@ from app.modules.tags.models import Tag
 from app.modules.users.models import User, UserRole
 from app.modules.videos.service import get_video_ingest_service
 from app.modules.watch_records.tables import watch_records
+from tests.edit_helpers import content_edit_body
 
 
 @pytest.fixture
@@ -149,7 +150,11 @@ def test_draft_edit_publish_and_learner_detail(context):
         source="출처",
         reviewed_on="2026-10-18",
     )
-    edited = ctx.client.patch(f"/api/contents/{content_id}", json=payload, headers=ctx.headers)
+    edited = ctx.client.patch(
+        f"/api/contents/{content_id}",
+        json=content_edit_body(ctx.client, f"/api/contents/{content_id}", ctx.headers, payload),
+        headers=ctx.headers,
+    )
     assert edited.status_code == 200, edited.text
     assert edited.json()["missing_for_publish"] == ["video"]
     assert len(edited.json()["detail"]["content"]["tags"]) == 2
@@ -179,32 +184,50 @@ def test_patch_omission_null_tag_replacement_and_caution(context):
     ctx = context
     content_id = draft(ctx, complete=True, caution_text="보관할 문구")
     response = ctx.client.patch(
-        f"/api/contents/{content_id}", json={"title": "수정"}, headers=ctx.headers
+        f"/api/contents/{content_id}",
+        json=content_edit_body(
+            ctx.client, f"/api/contents/{content_id}", ctx.headers, {"title": "수정"}
+        ),
+        headers=ctx.headers,
     )
     assert response.status_code == 200, response.text
     content = response.json()["detail"]
     assert content["source"] == "문헌" and len(content["content"]["tags"]) == 1
     assert content["caution_text"] == "보관할 문구"
     enabled = ctx.client.patch(
-        f"/api/contents/{content_id}", json={"caution_enabled": True}, headers=ctx.headers
+        f"/api/contents/{content_id}",
+        json=content_edit_body(
+            ctx.client, f"/api/contents/{content_id}", ctx.headers, {"caution_enabled": True}
+        ),
+        headers=ctx.headers,
     )
     assert enabled.status_code == 200
     invalid = ctx.client.patch(
         f"/api/contents/{content_id}",
-        json={"caution_text": None, "title": "취소"},
+        json=content_edit_body(
+            ctx.client,
+            f"/api/contents/{content_id}",
+            ctx.headers,
+            {"caution_text": None, "title": "취소"},
+        ),
         headers=ctx.headers,
     )
     assert invalid.status_code == 422
     assert editor(ctx, content_id).json()["detail"]["content"]["title"] == "수정"
     cleared = ctx.client.patch(
         f"/api/contents/{content_id}",
-        json={
-            "source": None,
-            "category_id": None,
-            "tag_ids": [],
-            "caution_enabled": False,
-            "caution_text": None,
-        },
+        json=content_edit_body(
+            ctx.client,
+            f"/api/contents/{content_id}",
+            ctx.headers,
+            {
+                "source": None,
+                "category_id": None,
+                "tag_ids": [],
+                "caution_enabled": False,
+                "caution_text": None,
+            },
+        ),
         headers=ctx.headers,
     )
     assert cleared.status_code == 200, cleared.text
@@ -226,7 +249,11 @@ def test_existing_tag_names_remain_readable_and_attachable(context, name):
     content_id = draft(ctx, tag_ids=[tag_id])
     assert editor(ctx, content_id).json()["detail"]["content"]["tags"] == [expected]
     updated = ctx.client.patch(
-        f"/api/contents/{content_id}", json={"tag_ids": [tag_id]}, headers=ctx.headers
+        f"/api/contents/{content_id}",
+        json=content_edit_body(
+            ctx.client, f"/api/contents/{content_id}", ctx.headers, {"tag_ids": [tag_id]}
+        ),
+        headers=ctx.headers,
     )
     assert updated.status_code == 200, updated.text
     assert updated.json()["detail"]["content"]["tags"] == [expected]
@@ -250,7 +277,12 @@ def test_invalid_published_edits_are_atomic(context, change, code):
     before = editor(ctx, content_id).json()
     response = ctx.client.patch(
         f"/api/contents/{content_id}",
-        json={**change, "core_content": "취소할 변경"},
+        json=content_edit_body(
+            ctx.client,
+            f"/api/contents/{content_id}",
+            ctx.headers,
+            {**change, "core_content": "취소할 변경"},
+        ),
         headers=ctx.headers,
     )
     assert response.status_code in (404, 422), response.text
@@ -280,7 +312,11 @@ def test_role_visibility_and_personal_target_rules(context):
         assert ctx.client.get(path, headers={"X-Actor-Id": "999"}).status_code == 404
     assert (
         ctx.client.patch(
-            f"/api/contents/{public_id}", json={"title": "금지"}, headers=learner
+            f"/api/contents/{public_id}",
+            json=content_edit_body(
+                ctx.client, f"/api/contents/{public_id}", ctx.headers, {"title": "금지"}
+            ),
+            headers=learner,
         ).status_code
         == 403
     )
@@ -601,7 +637,10 @@ def test_edit_and_publish_commit_failure_rolls_back(context, operation):
         response = (
             ctx.client.patch(
                 f"/api/contents/{content_id}",
-                json={"title": "취소", "tag_ids": ctx.ids["tags"][1:]},
+                json={
+                    **{"title": "취소", "tag_ids": ctx.ids["tags"][1:]},
+                    "expected_updated_at": before["updated_at"],
+                },
                 headers=ctx.headers,
             )
             if operation == "patch"
@@ -619,7 +658,11 @@ def test_not_found_and_revision_without_existing_video(context):
     ctx = context
     for method, path, kwargs in [
         ("GET", "/api/contents/999?view=editor", {}),
-        ("PATCH", "/api/contents/999", {"json": {"title": "없음"}}),
+        (
+            "PATCH",
+            "/api/contents/999",
+            {"json": {"title": "없음", "expected_updated_at": "2026-11-05T00:00:00Z"}},
+        ),
         ("POST", "/api/contents/999/publish", {}),
         ("GET", "/api/contents/999/video", {}),
     ]:
@@ -632,3 +675,17 @@ def test_not_found_and_revision_without_existing_video(context):
         ).status_code
         == 404
     )
+
+
+def test_content_edit_rejects_stale_version(context):
+    ctx = context
+    content_id = draft(ctx)
+    path = f"/api/contents/{content_id}"
+    version = editor(ctx, content_id).json()["updated_at"]
+    body = {"title": "first", "expected_updated_at": version}
+    assert ctx.client.patch(path, headers=ctx.headers, json=body).status_code == 200
+    body["title"] = "stale"
+    result = ctx.client.patch(path, headers=ctx.headers, json=body)
+    assert result.status_code == 409
+    assert result.json()["detail"]["code"] == "EDIT_CONFLICT"
+    assert editor(ctx, content_id).json()["detail"]["content"]["title"] == "first"

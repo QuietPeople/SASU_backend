@@ -5,7 +5,6 @@ from pydantic import ValidationError
 
 from app.modules.contents.schemas import ContentSummary
 from app.modules.saved_contents.schemas import SavedContentsQuery, SavedItem, SaveState
-from app.modules.saved_contents.service import paginate_saved_items
 
 
 def item(content_id):
@@ -69,24 +68,3 @@ def test_state_and_saved_item_contract():
         SavedItem.model_validate(data)
     with pytest.raises(ValidationError):
         SaveState(content_id=1, saved=True, other="사용하지 않는 필드")
-
-
-@pytest.mark.parametrize(
-    "page,size,ids,has_next",
-    [(1, 2, [3, 1], True), (2, 2, [2], False), (3, 2, [], False), (1, 3, [3, 1, 2], False)],
-)
-def test_pagination_preserves_supplied_order(page, size, ids, has_next):
-    eligible = [item(i) for i in [3, 1, 2]]
-    result = paginate_saved_items(eligible, SavedContentsQuery(page=page, size=size))
-    assert [value.content.content_id for value in result.items] == ids
-    assert (result.page, result.size, result.total, result.has_next) == (page, size, 3, has_next)
-    assert [value.content.content_id for value in eligible] == [3, 1, 2]
-
-
-def test_total_uses_only_final_eligible_items():
-    eligible = [item(i) for i in [5, 2]]
-    result = paginate_saved_items(eligible, SavedContentsQuery(size=1))
-    assert result.total == 2 and result.has_next is True
-    assert [value.content.content_id for value in result.items] == [5]
-    empty = paginate_saved_items([], SavedContentsQuery())
-    assert empty.total == 0 and empty.has_next is False and empty.items == []

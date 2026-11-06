@@ -6,7 +6,9 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
+from app.integrations import ffmpeg
 from app.integrations.ffmpeg import probe
 from app.integrations.storage import TEMP_PREFIX, LocalVideoStorage
 from app.modules.videos.errors import (
@@ -14,6 +16,7 @@ from app.modules.videos.errors import (
     EmptyFile,
     FileTooLarge,
     ProbeFailed,
+    ThumbnailGenerationFailed,
     UnsupportedMedia,
 )
 from app.modules.videos.policy import VideoPolicy
@@ -141,6 +144,64 @@ def test_rotation_is_kept(service, samples):
     assert (video.summary()["width"], video.summary()["height"]) == (320, 568)
 
 
+@pytest.mark.parametrize("sample", ["mp4", "webm", "rotated", "silent"])
+def test_first_frame_thumbnail_matches_display_orientation(service, storage, samples, sample):
+    video = ingest(service, samples[sample])
+    with Image.open(io.BytesIO(service.extract_thumbnail(video))) as image:
+        image.load()
+        assert image.format == "JPEG"
+        assert image.size == (video.probe.display_width, video.probe.display_height)
+    assert_no_temp_left(storage)
+
+
+def test_thumbnail_uses_first_frame_not_later_scene(service, storage, tmp_path):
+    for number, color in enumerate(["red", "blue"]):
+        with Image.new("RGB", (64, 32), color) as image:
+            image.save(tmp_path / f"frame-{number}.png")
+    source = tmp_path / "scenes.mp4"
+    subprocess.run(
+        [
+            *FFMPEG,
+            "-framerate",
+            "1",
+            "-i",
+            str(tmp_path / "frame-%d.png"),
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(source),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    video = ingest(service, source)
+    with Image.open(io.BytesIO(service.extract_thumbnail(video))) as image:
+        red, green, blue = image.convert("RGB").getpixel((32, 16))
+        assert red > 230 and green < 20 and blue < 20
+    assert_no_temp_left(storage)
+
+
+@pytest.mark.parametrize("failure", ["timeout", "process", "empty"])
+def test_thumbnail_extraction_failure_cleans_partial_image(
+    service, storage, samples, monkeypatch, failure
+):
+    video = ingest(service, samples["mp4"])
+
+    def failed_run(cmd, **kwargs):
+        Path(cmd[-1]).write_bytes(b"partial" if failure != "empty" else b"")
+        if failure == "timeout":
+            raise subprocess.TimeoutExpired(cmd, kwargs["timeout"])
+        return subprocess.CompletedProcess(cmd, 1 if failure == "process" else 0, b"", b"failure")
+
+    monkeypatch.setattr(ffmpeg.subprocess, "run", failed_run)
+    with pytest.raises(ThumbnailGenerationFailed):
+        service.extract_thumbnail(video)
+    assert_no_temp_left(storage)
+    assert list(storage.root.iterdir()) == [storage.resolve_path(video.storage_path)]
+
+
 def test_discard_removes_file(service, storage, samples):
     video = ingest(service, samples["mp4"])
     path = storage.resolve_path(video.storage_path)
@@ -202,3 +263,58 @@ def test_sanitize_original_name():
     assert sanitize_original_name(None) == "video"
     assert sanitize_original_name("a/b/c.mp4") == "c.mp4"
     assert len(sanitize_original_name("가" * 400 + ".mp4")) == 255
+
+
+@pytest.mark.parametrize("key", ["mp4", "webm", "rotated", "silent"])
+def test_scaled_media_keeps_direction_and_stays_within_policy(storage, samples, key):
+    original = probe(samples[key])
+    service = VideoIngestService(storage, VideoPolicy(target_long_edge_px=160))
+    video = ingest(service, samples[key])
+    assert max(video.probe.width, video.probe.height) <= 160
+    assert video.probe.is_vertical == original.is_vertical
+    assert video.probe.display_width / video.probe.display_height == pytest.approx(
+        original.display_width / original.display_height, abs=0.02
+    )
+    assert video.duration_seconds == pytest.approx(original.duration_sec, abs=0.15)
+    assert (video.probe.audio_codec is None) == (original.audio_codec is None)
+    assert_no_temp_left(storage)
+
+
+def test_oversized_normalized_file_is_not_committed(storage, samples, monkeypatch):
+    from app.modules.videos import service as processing
+
+    max_bytes = samples["mp4"].stat().st_size
+    service = VideoIngestService(storage, VideoPolicy(max_bytes=max_bytes))
+
+    def oversized_conversion(src, dst, **kwargs):
+        dst.write_bytes(b"x" * (max_bytes + 1))
+
+    monkeypatch.setattr(processing, "remux", oversized_conversion)
+    with pytest.raises(FileTooLarge):
+        ingest(service, samples["mp4"])
+    assert list(storage.root.iterdir()) == []
+
+
+def test_non_browser_profile_rejected_with_real_probe(service, storage, tmp_path):
+    sample = make_video(tmp_path / "444.mp4", acodec=None, extra=("-pix_fmt", "yuv444p"))
+    assert probe(sample).pixel_format == "yuv444p"
+    with pytest.raises(UnsupportedMedia):
+        ingest(service, sample)
+    assert_no_temp_left(storage)
+
+
+def test_corrupt_normalized_frames_never_committed(service, storage, samples, monkeypatch):
+    original = service.normalize
+
+    def corrupt(src, plan, streams):
+        output = original(src, plan, streams)
+        data = bytearray(output.read_bytes())
+        position = data.index(b"mdat") + 4
+        data[position : position + 500] = b"\x00" * 500
+        output.write_bytes(data)
+        return output
+
+    monkeypatch.setattr(service, "normalize", corrupt)
+    with pytest.raises(ProbeFailed):
+        ingest(service, samples["mp4"])
+    assert list(storage.root.iterdir()) == []

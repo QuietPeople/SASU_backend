@@ -41,6 +41,10 @@ class DurationOutOfRange(VideoError):
     status, error_code, reason = 422, "VIDEO_DURATION_OUT_OF_RANGE", "duration_out_of_range"
 
 
+class ResolutionOutOfRange(VideoError):
+    status, error_code, reason = 422, "VIDEO_RESOLUTION_OUT_OF_RANGE", "resolution_out_of_range"
+
+
 class ProbeFailed(VideoError):
     """ffprobe가 파일을 해석하지 못함(손상·잘린 파일 등)."""
 
@@ -55,6 +59,10 @@ class ProcessingFailed(VideoError):
     """ffmpeg 정규화 실패. 서버 측 문제일 수 있어 500으로 구분한다."""
 
     status, error_code, reason = 500, "VIDEO_PROCESSING_FAILED", "processing_failed"
+
+
+class ThumbnailGenerationFailed(ProcessingFailed):
+    error_code, reason = "THUMBNAIL_GENERATION_FAILED", "thumbnail_generation_failed"
 
 
 class MediaToolMissing(VideoError):

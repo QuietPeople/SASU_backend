@@ -1,10 +1,11 @@
 -- 임시 개발·데모 데이터: 기본 데이터·더존 목업·퀴즈·시리즈·가상 학습 기록.
 -- 운영용 데이터 또는 회원가입 로직이 아니다. 불필요해지면 이 파일과 안내·전용 테스트를 제거한다.
 -- 테이블·Alembic 이력은 변경하지 않는다. DO 문 전체가 하나의 트랜잭션으로 처리된다.
--- demo_seeds/videos에 원본 파일명으로 둔 영상을 demo_seeds/demo_injection.py가 복사한 뒤 실행한다.
+-- demo_seeds/videos·thumbnails의 원본을 demo_seeds/demo_injection.py가 각각 서버 볼륨에 복사한다.
 -- 재실행: 영상 UUID 25개가 존재하면 기초·콘텐츠 삽입을 생략하고 보강 단계로 진행한다.
 -- 보강은 전용 demo_dozone 계정을 처음 만들 때 한 번만 수행한다. 이후 수정·초기화를 유지한다.
 -- 영상 일부만 존재하면 중단한다. 기존 데이터와 원본 영상은 덮어쓰지 않는다.
+-- 원본 데모 영상에 썸네일이 없으면 보강한다. 시리즈 직접 이미지는 넣지 않고 첫 영상을 참조한다.
 
 DO $sasu_seed$
 DECLARE
@@ -121,7 +122,15 @@ DECLARE
       "core_content": "VLOOKUP은 기준 값으로 다른 표의 값을 찾아옵니다. 찾을 값, 범위, 열 번호, 일치 옵션 순서로 입력합니다.",
       "source": "SASU 자체 제작(목업)",
       "reviewed_on": "2026-10-29",
-      "sha256": "1b21ccb7ce9e554718e33e4a39d781fa693a20d8ed14c7e745d3cfb6b99ee1ae"
+      "sha256": "1b21ccb7ce9e554718e33e4a39d781fa693a20d8ed14c7e745d3cfb6b99ee1ae",
+      "thumbnail": {
+        "image_asset_id": "d55af83a-00ce-5b58-b7f8-946329d0bf54",
+        "original_name": "엑셀 VLOOKUP 3분 정리.jpg",
+        "storage_path": "dozone-demo-20261029/01.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 50025,
+        "sha256": "24ec0b057bdcf63ebb357576d85d7366a5d487e5175da1b16e20bd9bfc39e969"
+      }
     },
     {
       "number": 2,
@@ -139,7 +148,15 @@ DECLARE
       "core_content": "피벗 테이블은 원본 데이터를 원하는 기준으로 요약합니다. 행에 월, 값에 매출을 넣으면 월별 합계가 나옵니다.",
       "source": "SASU 자체 제작(목업)",
       "reviewed_on": "2026-10-29",
-      "sha256": "993c0438fa952a156fc7d721783039206b16288f8f094e6ca677272e12364f23"
+      "sha256": "993c0438fa952a156fc7d721783039206b16288f8f094e6ca677272e12364f23",
+      "thumbnail": {
+        "image_asset_id": "8f5e1717-6e4a-5dd2-a7f5-57d1621740ec",
+        "original_name": "피벗 테이블로 월별 매출 요약하기.jpg",
+        "storage_path": "dozone-demo-20261029/02.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 56881,
+        "sha256": "161e35481bfeee82a6e39e23111d702bc6ae73cce9aec05954af823351ed5231"
+      }
     },
     {
       "number": 3,
@@ -157,7 +174,15 @@ DECLARE
       "core_content": "정렬 기능을 쓰면 도형을 일정한 간격으로 맞출 수 있습니다. 여러 개를 선택한 뒤 맞춤 메뉴를 사용합니다.",
       "source": "SASU 자체 제작(목업)",
       "reviewed_on": "2026-10-29",
-      "sha256": "bf863a033a0c1e91b0c8a88a0a6610eb6a4c599784740d3e8b04ba93908d0d6c"
+      "sha256": "bf863a033a0c1e91b0c8a88a0a6610eb6a4c599784740d3e8b04ba93908d0d6c",
+      "thumbnail": {
+        "image_asset_id": "839b9e37-8839-5bd2-b93f-a67cd8319077",
+        "original_name": "파워포인트 슬라이드 정렬 단축키.jpg",
+        "storage_path": "dozone-demo-20261029/03.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 62799,
+        "sha256": "5e50c91177c77b7a54a051853b1246a09f76ddbe12a843cd489fe2067a911747"
+      }
     },
     {
       "number": 4,
@@ -175,7 +200,15 @@ DECLARE
       "core_content": "제목 스타일을 지정하면 목차를 자동으로 만들 수 있습니다. 내용이 바뀌면 목차 업데이트만 누르면 됩니다.",
       "source": "SASU 자체 제작(목업)",
       "reviewed_on": "2026-10-29",
-      "sha256": "05b503e5fc9082b23caba72c9846024e2d8d6e458772ef9a3d7f3fa4be3f8133"
+      "sha256": "05b503e5fc9082b23caba72c9846024e2d8d6e458772ef9a3d7f3fa4be3f8133",
+      "thumbnail": {
+        "image_asset_id": "45622428-871f-53c4-9a20-7d1db4eb133c",
+        "original_name": "워드 스타일로 목차 자동 만들기.jpg",
+        "storage_path": "dozone-demo-20261029/04.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 57377,
+        "sha256": "66aaafb4ba20da93fd5f97280584dd474e05487be4ef39ca0838ea973de78f18"
+      }
     },
     {
       "number": 5,
@@ -193,7 +226,15 @@ DECLARE
       "core_content": "업무 메일은 첫 문장에 목적을 밝힙니다. 인사 뒤에 요청이나 공유 내용을 한 줄로 먼저 씁니다.",
       "source": "SASU 자체 제작(목업)",
       "reviewed_on": "2026-10-29",
-      "sha256": "a6444bbd94c7870e1008d4fac605c906498506c8ae9425418732dd846634de05"
+      "sha256": "a6444bbd94c7870e1008d4fac605c906498506c8ae9425418732dd846634de05",
+      "thumbnail": {
+        "image_asset_id": "a8c47721-2c1e-5077-9874-538f8cfc0232",
+        "original_name": "업무 메일 첫 문장 쓰는 법.jpg",
+        "storage_path": "dozone-demo-20261029/05.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 51297,
+        "sha256": "7c983d791a8397d147bf3d1172c7fc65dc799abf8ce5a7c7893818f4c80261da"
+      }
     },
     {
       "number": 6,
@@ -211,7 +252,15 @@ DECLARE
       "core_content": "보고는 결론을 먼저 말하고 근거를 이어 붙입니다. 듣는 사람이 판단할 내용을 앞에 둡니다.",
       "source": "SASU 자체 제작(목업)",
       "reviewed_on": "2026-10-29",
-      "sha256": "5d49f59d89a8bb12cfef4664ac5442593ea54b6a754324a4671737ae35f3e38a"
+      "sha256": "5d49f59d89a8bb12cfef4664ac5442593ea54b6a754324a4671737ae35f3e38a",
+      "thumbnail": {
+        "image_asset_id": "55d60aea-8071-540d-816b-3d85f40f62a6",
+        "original_name": "보고는 결론부터 두괄식 말하기.jpg",
+        "storage_path": "dozone-demo-20261029/06.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 53773,
+        "sha256": "b48dfaa8e1a80739b69501326bfb4ab43b3807d5de8b5f045525e9aa9637399e"
+      }
     },
     {
       "number": 7,
@@ -229,7 +278,15 @@ DECLARE
       "core_content": "회의록은 일시, 참석자, 결정 사항, 할 일, 담당자 다섯 줄로 정리합니다. 결정과 할 일을 구분해 적습니다.",
       "source": "SASU 자체 제작(목업)",
       "reviewed_on": "2026-10-29",
-      "sha256": "5d2db4ad3812d546597770566c0aed1b63d6b264e464017dee60562cc4a31f9a"
+      "sha256": "5d2db4ad3812d546597770566c0aed1b63d6b264e464017dee60562cc4a31f9a",
+      "thumbnail": {
+        "image_asset_id": "47c6f171-c5c0-53ae-98e6-acd48d804d0a",
+        "original_name": "회의록 5줄로 정리하는 템플릿.jpg",
+        "storage_path": "dozone-demo-20261029/07.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 58168,
+        "sha256": "558c4d730e8ad4c1a5dcc664c5876d002263acd02ea23eb60e47fd387752bca4"
+      }
     },
     {
       "number": 8,
@@ -247,7 +304,15 @@ DECLARE
       "core_content": "평균은 극단값에 영향을 크게 받습니다. 값이 한쪽으로 치우치면 중앙값이 대표값으로 더 적합합니다.",
       "source": "SASU 자체 제작(목업)",
       "reviewed_on": "2026-10-29",
-      "sha256": "d941899028367173d54a2d62c6b56e5f84f2bc1f7f138073a920c9bee9aebd87"
+      "sha256": "d941899028367173d54a2d62c6b56e5f84f2bc1f7f138073a920c9bee9aebd87",
+      "thumbnail": {
+        "image_asset_id": "0f9566e4-5d53-5449-8717-243267de8fba",
+        "original_name": "평균과 중앙값 언제 무엇을 쓸까.jpg",
+        "storage_path": "dozone-demo-20261029/08.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 65360,
+        "sha256": "1d77d06759d7f37f40d21fe6ab03a55d1e1498688d64de4db2f15539bcfedfb4"
+      }
     },
     {
       "number": 9,
@@ -265,7 +330,15 @@ DECLARE
       "core_content": "SELECT는 조회할 열을, FROM은 테이블을 지정합니다. WHERE로 조건을 걸어 필요한 행만 가져옵니다.",
       "source": "SASU 자체 제작(목업)",
       "reviewed_on": "2026-10-29",
-      "sha256": "0be30a41a8f07ab105a109ed3949f7e2c6f6d8339e2eff3992acaf44719d5c59"
+      "sha256": "0be30a41a8f07ab105a109ed3949f7e2c6f6d8339e2eff3992acaf44719d5c59",
+      "thumbnail": {
+        "image_asset_id": "9df202f5-0afc-57c4-9e47-9414cd073c4c",
+        "original_name": "SQL SELECT 기본 문법 한눈에.jpg",
+        "storage_path": "dozone-demo-20261029/09.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 57135,
+        "sha256": "bfe4fbb219b3119125908342a2afe11e9f2a652f7af99c56b878a2c51d8efba8"
+      }
     },
     {
       "number": 10,
@@ -283,7 +356,15 @@ DECLARE
       "core_content": "항목끼리 비교할 때는 막대 그래프를 씁니다. 시간에 따른 변화를 볼 때는 선 그래프가 적합합니다.",
       "source": "SASU 자체 제작(목업)",
       "reviewed_on": "2026-10-29",
-      "sha256": "dcee39a0b093684e2d7bf73608a9da8b138f6002bf27462e966002c90c65d59b"
+      "sha256": "dcee39a0b093684e2d7bf73608a9da8b138f6002bf27462e966002c90c65d59b",
+      "thumbnail": {
+        "image_asset_id": "ac2a10c2-8cad-5636-b8cc-09eb3881e485",
+        "original_name": "막대 vs 선 그래프 고르는 기준.jpg",
+        "storage_path": "dozone-demo-20261029/10.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 53244,
+        "sha256": "af55d4d9f38bcda4d309543611044824ef4caf921f3dc38395e8b4c9ff06d429"
+      }
     },
     {
       "number": 11,
@@ -301,7 +382,15 @@ DECLARE
       "core_content": "R&R은 역할과 책임을 뜻합니다. 누가 무엇을 맡고 어디까지 책임지는지 정해 업무 혼선을 줄입니다.",
       "source": "SASU 자체 제작(목업)",
       "reviewed_on": "2026-10-29",
-      "sha256": "9b377bd2c15cf325d9533619eac28422c8eae5f6f2b94ba4c2ff72b36c11259a"
+      "sha256": "9b377bd2c15cf325d9533619eac28422c8eae5f6f2b94ba4c2ff72b36c11259a",
+      "thumbnail": {
+        "image_asset_id": "2bebb996-4623-55ef-953b-b7a4aca002c4",
+        "original_name": "RnR이 뭐예요 역할과 책임 정리.jpg",
+        "storage_path": "dozone-demo-20261029/11.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 51258,
+        "sha256": "09d2d94570a76bcee26f14389055d699d04a38079be36f46ec4d99cc1bb317b5"
+      }
     },
     {
       "number": 12,
@@ -319,7 +408,15 @@ DECLARE
       "core_content": "커밋 메시지는 유형과 변경 내용을 한 줄로 씁니다. 무엇을 왜 바꿨는지 알 수 있게 작성합니다.",
       "source": "SASU 자체 제작(목업)",
       "reviewed_on": "2026-10-29",
-      "sha256": "f75fca4f01afe0f4c9e7903463a8208b64129e52895fdb57461c7c99262d0a28"
+      "sha256": "f75fca4f01afe0f4c9e7903463a8208b64129e52895fdb57461c7c99262d0a28",
+      "thumbnail": {
+        "image_asset_id": "c380273e-c9c6-5202-944d-0cbb1e084365",
+        "original_name": "Git 커밋 메시지 잘 쓰는 법.jpg",
+        "storage_path": "dozone-demo-20261029/12.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 42183,
+        "sha256": "970628f56560dc2b4638816bd5b05f7e7a1b6325678598f6cc398ed300adadad"
+      }
     },
     {
       "number": 13,
@@ -337,7 +434,15 @@ DECLARE
       "core_content": "명함은 아랫사람이 먼저 건넵니다. 받은 명함은 바로 넣지 않고 잠시 확인합니다.",
       "source": "SASU 자체 제작(목업)",
       "reviewed_on": "2026-10-29",
-      "sha256": "307ae9f22caccf355c289244ca4e9186f66840fb0db01488d253c18ee8d59651"
+      "sha256": "307ae9f22caccf355c289244ca4e9186f66840fb0db01488d253c18ee8d59651",
+      "thumbnail": {
+        "image_asset_id": "c9af65f9-bba9-51a9-96fc-bae2641d0adb",
+        "original_name": "명함 주고받는 순서와 예절.jpg",
+        "storage_path": "dozone-demo-20261029/13.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 55662,
+        "sha256": "fed129281f08f56c063bbde49bd98f1f2c2dd5843a2e167593ee949fdfb50cc8"
+      }
     },
     {
       "number": 14,
@@ -355,7 +460,15 @@ DECLARE
       "core_content": "25분 집중하고 5분 쉬는 것을 한 단위로 반복합니다. 네 번 반복한 뒤에는 길게 쉽니다.",
       "source": "SASU 자체 제작(목업)",
       "reviewed_on": "2026-10-29",
-      "sha256": "3753da913afbc662afde9e419b3f4a5df5a2d07ad2c6f8c0b2d446bfae1ca1b4"
+      "sha256": "3753da913afbc662afde9e419b3f4a5df5a2d07ad2c6f8c0b2d446bfae1ca1b4",
+      "thumbnail": {
+        "image_asset_id": "1a39b00b-1baa-5f76-9c2b-ee793e38b9a8",
+        "original_name": "뽀모도로 기법 25분 집중하기.jpg",
+        "storage_path": "dozone-demo-20261029/14.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 54115,
+        "sha256": "7aae029a64aa91971c116d736c0f2d2c5a1028a8b0f979aa4cab1f95da93549a"
+      }
     },
     {
       "number": 15,
@@ -373,7 +486,15 @@ DECLARE
       "core_content": "할 일을 긴급성과 중요도로 나눠 네 칸에 배치합니다. 중요하지만 급하지 않은 일에 시간을 먼저 확보합니다.",
       "source": "SASU 자체 제작(목업)",
       "reviewed_on": "2026-10-29",
-      "sha256": "b4761ee0fb280a1bec0469303f2b930802d1879397dd483c9cd9e0d41ed595af"
+      "sha256": "b4761ee0fb280a1bec0469303f2b930802d1879397dd483c9cd9e0d41ed595af",
+      "thumbnail": {
+        "image_asset_id": "3857d2a3-f111-5971-ba60-7ee7e9208686",
+        "original_name": "할 일 우선순위 아이젠하워 매트릭스.jpg",
+        "storage_path": "dozone-demo-20261029/15.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 61665,
+        "sha256": "1d0130fb6c8151ef7b727b4d012d51e61367b48a327edf2932e00c049daa93fe"
+      }
     },
     {
       "number": 16,
@@ -391,7 +512,15 @@ DECLARE
       "core_content": "조건부 서식은 조건에 맞는 셀에 자동으로 색을 칠합니다. 마감일이 지난 행을 한눈에 찾을 수 있습니다.",
       "source": "SASU 데모 영상팀 01 (가상 출처)",
       "reviewed_on": "2026-10-29",
-      "sha256": "f89fcfc84af690bd3173a067f755812e89dfd88376a33b2fd35894ead7b47026"
+      "sha256": "f89fcfc84af690bd3173a067f755812e89dfd88376a33b2fd35894ead7b47026",
+      "thumbnail": {
+        "image_asset_id": "31522b2e-fb98-5337-90dd-b5483b96807b",
+        "original_name": "엑셀 조건부 서식으로 마감일 강조하기.jpg",
+        "storage_path": "dozone-demo-20261029/16.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 185540,
+        "sha256": "4dc2c6dc15c54dad5178dbe86ed11f066fcb52bdae7ef697371dddbe1f57231c"
+      }
     },
     {
       "number": 17,
@@ -409,7 +538,15 @@ DECLARE
       "core_content": "자기소개는 이름, 하는 일, 강점 순서로 짧게 말합니다. 마지막에 함께 일하고 싶은 이유를 덧붙입니다.",
       "source": "SASU 데모 영상팀 02 (가상 출처)",
       "reviewed_on": "2026-10-29",
-      "sha256": "1f196ae940f489830d6ee69d9295d5cad61d57971d6fdd5886701c8cd62555ed"
+      "sha256": "1f196ae940f489830d6ee69d9295d5cad61d57971d6fdd5886701c8cd62555ed",
+      "thumbnail": {
+        "image_asset_id": "27b3b23f-47f5-5b3a-bb28-cc30b7821229",
+        "original_name": "1분 자기소개, 이렇게 시작하세요.jpg",
+        "storage_path": "dozone-demo-20261029/17.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 471060,
+        "sha256": "f7e1a47ea69d738d07222ba3ad9d7d1945b9621f4c1ef710ff3c2191b117132a"
+      }
     },
     {
       "number": 18,
@@ -427,7 +564,15 @@ DECLARE
       "core_content": "거절할 때는 이유와 대안을 함께 말합니다. 감사 표현으로 시작하면 관계를 해치지 않습니다.",
       "source": "SASU 데모 영상팀 03 (가상 출처)",
       "reviewed_on": "2026-10-29",
-      "sha256": "8fda281f450cef1aa53edcb10b93e821a72cc7ca7bc7d246ce2600ec6cd82b17"
+      "sha256": "8fda281f450cef1aa53edcb10b93e821a72cc7ca7bc7d246ce2600ec6cd82b17",
+      "thumbnail": {
+        "image_asset_id": "a57474c9-2f38-5fd9-aaa3-801578bdbfb0",
+        "original_name": "거절할 때 쓰는 부드러운 말투 3가지.jpg",
+        "storage_path": "dozone-demo-20261029/18.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 349332,
+        "sha256": "9143691a877aa140ef0293b7846dca99288e46ea6286ce8704fd1e2537d8bc7a"
+      }
     },
     {
       "number": 19,
@@ -445,7 +590,15 @@ DECLARE
       "core_content": "카메라, 마이크, 조명, 배경, 공유할 화면을 미리 확인합니다. 시작 5분 전에 접속해 두면 지연을 줄일 수 있습니다.",
       "source": "SASU 데모 영상팀 04 (가상 출처)",
       "reviewed_on": "2026-10-29",
-      "sha256": "12ee5871447fdebeaa4bb263fb6853d6097617562e2a9fe124c015bae54ed4d6"
+      "sha256": "12ee5871447fdebeaa4bb263fb6853d6097617562e2a9fe124c015bae54ed4d6",
+      "thumbnail": {
+        "image_asset_id": "371d0464-338f-5c3d-b139-f04a3062414d",
+        "original_name": "화상회의 전 체크리스트 5가지.jpg",
+        "storage_path": "dozone-demo-20261029/19.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 76321,
+        "sha256": "723a5f1d81222683443fcbd1c97d7e0aea8ad7f3d51a0c1846e383ef3dc906cb"
+      }
     },
     {
       "number": 20,
@@ -463,7 +616,15 @@ DECLARE
       "core_content": "메모는 날짜와 주제별 페이지로 나눠 정리합니다. 태그를 달면 나중에 관련 메모를 쉽게 찾습니다.",
       "source": "SASU 데모 영상팀 05 (가상 출처)",
       "reviewed_on": "2026-10-29",
-      "sha256": "2f987227fe196c45928c1df0dab548310caf980763476cb13627ccc9694a509f"
+      "sha256": "2f987227fe196c45928c1df0dab548310caf980763476cb13627ccc9694a509f",
+      "thumbnail": {
+        "image_asset_id": "c80e8f9a-213b-5099-88b7-6d214e1bbf16",
+        "original_name": "업무 메모, 노션으로 정리하는 법.jpg",
+        "storage_path": "dozone-demo-20261029/20.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 537815,
+        "sha256": "9212927841b9114524cf8be793417e394e68066e9ccc482afb20d0d7717be4b6"
+      }
     },
     {
       "number": 21,
@@ -481,7 +642,15 @@ DECLARE
       "core_content": "KPI는 성과를 꾸준히 측정하는 지표입니다. OKR은 도전적인 목표와 그 달성 여부를 확인할 핵심 결과를 함께 정합니다.",
       "source": "SASU 데모 영상팀 06 (가상 출처)",
       "reviewed_on": "2026-10-29",
-      "sha256": "00c4c09e412fadf04822eb0efddd66f6e06ae4db0fd79bff1e803c38cb094fb7"
+      "sha256": "00c4c09e412fadf04822eb0efddd66f6e06ae4db0fd79bff1e803c38cb094fb7",
+      "thumbnail": {
+        "image_asset_id": "124ebf5c-08bb-5f7a-aa56-97a4959b8d2d",
+        "original_name": "KPI와 OKR 차이 한 번에 이해하기.jpg",
+        "storage_path": "dozone-demo-20261029/21.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 536207,
+        "sha256": "a4cc26f8ff239ebcce9e1752ab73b84b2724b7de5f0c65aaed7afb0bfa818472"
+      }
     },
     {
       "number": 22,
@@ -499,7 +668,15 @@ DECLARE
       "core_content": "강조할 항목 하나에만 진한 색을 씁니다. 나머지는 회색 계열로 두면 핵심이 잘 드러납니다.",
       "source": "SASU 데모 영상팀 07 (가상 출처)",
       "reviewed_on": "2026-10-29",
-      "sha256": "590c8a7238b07ff860771477ab90bf1ff44b27818668ec8067bcda4faf6e0a39"
+      "sha256": "590c8a7238b07ff860771477ab90bf1ff44b27818668ec8067bcda4faf6e0a39",
+      "thumbnail": {
+        "image_asset_id": "408ed74f-a6d1-541b-92ed-78daa53f7406",
+        "original_name": "보고서 그래프 색상 고르는 기준.jpg",
+        "storage_path": "dozone-demo-20261029/22.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 581554,
+        "sha256": "75b8f5af4d2e9e8f8de069d35895915e982a06cc0b1892dc95ca89edaee85bce"
+      }
     },
     {
       "number": 23,
@@ -517,7 +694,15 @@ DECLARE
       "core_content": "사이트마다 다른 비밀번호를 사용합니다. 비밀번호 관리자와 2단계 인증을 함께 쓰면 안전합니다.",
       "source": "SASU 데모 영상팀 08 (가상 출처)",
       "reviewed_on": "2026-10-29",
-      "sha256": "0cfe21d3a539ff09a4afbab0ec049ba6da6df475c194fe2f3081779d7fea02ef"
+      "sha256": "0cfe21d3a539ff09a4afbab0ec049ba6da6df475c194fe2f3081779d7fea02ef",
+      "thumbnail": {
+        "image_asset_id": "8c23a9aa-0b03-551e-9791-ce30430bb9b5",
+        "original_name": "비밀번호 관리, 이것만 지키세요.jpg",
+        "storage_path": "dozone-demo-20261029/23.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 358233,
+        "sha256": "eed8851165b5e74ed6a57af7f2d5962a15318b8ed1fba59c7cbedcdcd5f0b4db"
+      }
     },
     {
       "number": 24,
@@ -535,7 +720,15 @@ DECLARE
       "core_content": "신분증, 서류, 필기구를 미리 챙깁니다. 출근 시간보다 10분 일찍 도착해 인사를 준비합니다.",
       "source": "SASU 데모 영상팀 09 (가상 출처)",
       "reviewed_on": "2026-10-29",
-      "sha256": "c879dd3ececc756ee3755bbcbe4b83d03a752c09dba0aede08504332967309d2"
+      "sha256": "c879dd3ececc756ee3755bbcbe4b83d03a752c09dba0aede08504332967309d2",
+      "thumbnail": {
+        "image_asset_id": "6d417e29-d41e-59a4-92bf-c98c3fd2f0a7",
+        "original_name": "첫 출근 날 꼭 챙길 것들.jpg",
+        "storage_path": "dozone-demo-20261029/24.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 396552,
+        "sha256": "ac3f4fc99836bf02d26c6918cc2838453513cb8049e0d47ebaea83fe97ff3103"
+      }
     },
     {
       "number": 25,
@@ -553,7 +746,15 @@ DECLARE
       "core_content": "책상에는 지금 하는 일에 필요한 물건만 둡니다. 퇴근 전에 정리하면 다음 날 바로 시작할 수 있습니다.",
       "source": "SASU 데모 영상팀 10 (가상 출처)",
       "reviewed_on": "2026-10-29",
-      "sha256": "126e60887b7f86715833f5b551ab1ed7280c6dc6a7d689111f3b74420196c8b9"
+      "sha256": "126e60887b7f86715833f5b551ab1ed7280c6dc6a7d689111f3b74420196c8b9",
+      "thumbnail": {
+        "image_asset_id": "6a971e7f-4133-5f5f-83df-d8229e151c5b",
+        "original_name": "집중력 높이는 책상 정리 습관.jpg",
+        "storage_path": "dozone-demo-20261029/25.jpg",
+        "mime_type": "image/jpeg",
+        "size_bytes": 590201,
+        "sha256": "3e04389f2df98526d0939165d5995890976876774d48cf01ce8110aae4cdf9d0"
+      }
     }
   ],
   "quizzes": [
@@ -1755,6 +1956,22 @@ BEGIN
     RAISE NOTICE '더존 데모 적용 완료: 계정 %개, 분류 %개, 태그 %개 추가; 영상·공개 콘텐츠 각 25개. 기존 설정은 유지합니다.',
         added_users, added_categories, added_tags;
     END base_seed;
+
+    -- 기존 영상 데모에도 이미지만 추가한다. 직접 등록한 이미지와 교체된 영상은 유지한다.
+    FOR item IN SELECT * FROM jsonb_array_elements(dataset->'contents') LOOP
+        IF NOT (item ? 'thumbnail') THEN CONTINUE; END IF;
+        SELECT content_id INTO selected_content_id FROM sasu.contents
+        WHERE video_asset_id = (item->>'video_asset_id')::uuid
+          AND thumbnail_image_id IS NULL;
+        IF NOT FOUND THEN CONTINUE; END IF;
+        INSERT INTO sasu.image_assets (image_asset_id, storage_path, mime_type, size_bytes)
+        VALUES ((item->'thumbnail'->>'image_asset_id')::uuid,
+            item->'thumbnail'->>'storage_path', item->'thumbnail'->>'mime_type',
+            (item->'thumbnail'->>'size_bytes')::bigint);
+        UPDATE sasu.contents
+        SET thumbnail_image_id = (item->'thumbnail'->>'image_asset_id')::uuid
+        WHERE content_id = selected_content_id;
+    END LOOP;
 
     -- 기초·콘텐츠만 넣었던 DB에도 아래 보강을 추가할 수 있다.
     -- 전용 계정을 포함한 보강 전체가 한 트랜잭션이다. 계정이 남아 있으면 재적용하지 않아

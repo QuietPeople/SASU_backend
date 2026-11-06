@@ -10,6 +10,7 @@ from app.api.schemas import Page
 from app.core.exceptions import ErrorResponse
 from app.core.security import Actor, require_actor, require_admin
 from app.modules.contents import thumbnail_service
+from app.modules.contents.schemas import ThumbnailQuery
 from app.modules.curricula import service
 from app.modules.curricula.schemas import (
     CurriculumDetail,
@@ -32,7 +33,14 @@ Writes = [Depends(require_admin), Depends(reject_query_parameters)]
 
 
 @router.get(
-    "/curriculums", response_model=Page[CurriculumSummary], summary="API-CRS-01 커리큘럼 목록 조회"
+    "/curriculums",
+    response_model=Page[CurriculumSummary],
+    summary="API-CRS-01 커리큘럼 목록 조회",
+    description=(
+        "q로 제목·설명을 대소문자 구분 없이 부분 검색합니다. 앞뒤 공백을 제외하고 최대 200자이며 "
+        "빈 검색어는 전체 조회입니다. 검색 및 조회 권한 조건을 적용한 "
+        "전체 개수와 페이지를 반환합니다."
+    ),
 )
 def get_list(
     query: Annotated[CurriculumListQuery, Query()], actor: CurrentActor, session: Database
@@ -123,21 +131,24 @@ def get_progress(
 @router.put(
     "/curriculums/{curriculum_id}/thumbnail",
     status_code=204,
-    dependencies=[Depends(reject_query_parameters)],  # 관리자 검사는 서비스에서 트랜잭션 안에서 수행
+    dependencies=[
+        Depends(reject_query_parameters)
+    ],  # 관리자 검사는 서비스에서 트랜잭션 안에서 수행
     summary="API-CRS-IMG-01 커리큘럼 썸네일 등록·교체",
     description="관리자가 JPEG·PNG·WebP 이미지를 썸네일로 등록합니다. 최대 10MB.",
     responses={
         413: {"model": ErrorResponse, "description": "이미지 용량 초과"},
         415: {"model": ErrorResponse, "description": "지원하지 않는 이미지 형식"},
+        422: {"model": ErrorResponse, "description": "손상되었거나 읽을 수 없는 이미지"},
     },
 )
-async def put_curriculum_thumbnail(
+def put_curriculum_thumbnail(
     curriculum_id: ResourceId,
     actor_id: ActorId,
     session: Database,
     file: Annotated[UploadFile, File(description="썸네일 이미지(JPEG·PNG·WebP, 최대 10MB)")],
 ):
-    data = await file.read()
+    data = thumbnail_service.read_upload(file.file)
     thumbnail_service.put_curriculum_thumbnail(session, curriculum_id, actor_id, data)
 
 
@@ -152,17 +163,25 @@ async def put_curriculum_thumbnail(
         }
     },
 )
-def get_curriculum_thumbnail(curriculum_id: ResourceId, session: Database):
-    data, mime = thumbnail_service.get_curriculum_thumbnail(session, curriculum_id)
+def get_curriculum_thumbnail(
+    curriculum_id: ResourceId, session: Database, query: Annotated[ThumbnailQuery, Query()]
+):
+    data, mime = thumbnail_service.get_curriculum_thumbnail(session, curriculum_id, query)
     return Response(
-        content=data, media_type=mime, headers={"Cache-Control": "public, max-age=86400"}
+        content=data,
+        media_type=mime,
+        headers={
+            "Cache-Control": "private, no-store" if query.preview else "public, max-age=86400"
+        },
     )
 
 
 @router.delete(
     "/curriculums/{curriculum_id}/thumbnail",
     status_code=204,
-    dependencies=[Depends(reject_query_parameters)],  # 관리자 검사는 서비스에서 트랜잭션 안에서 수행
+    dependencies=[
+        Depends(reject_query_parameters)
+    ],  # 관리자 검사는 서비스에서 트랜잭션 안에서 수행
     summary="API-CRS-IMG-03 커리큘럼 썸네일 삭제",
 )
 def delete_curriculum_thumbnail(curriculum_id: ResourceId, actor_id: ActorId, session: Database):

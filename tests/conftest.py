@@ -23,6 +23,7 @@ def isolate_settings(monkeypatch, tmp_path):
         "DB_ECHO",
         "DB_CONNECT_TIMEOUT",
         "VIDEO_STORAGE_ROOT",
+        "IMAGE_STORAGE_ROOT",
         "VIDEO_MAX_MB",
         "VIDEO_MIN_SECONDS",
         "VIDEO_MAX_SECONDS",
@@ -30,6 +31,7 @@ def isolate_settings(monkeypatch, tmp_path):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("DB_PASSWORD", "sasu-test-password")
     monkeypatch.setenv("VIDEO_STORAGE_ROOT", str(tmp_path / "videos"))
+    monkeypatch.setenv("IMAGE_STORAGE_ROOT", str(tmp_path / "images"))
     monkeypatch.setitem(Settings.model_config, "env_file", None)
     get_settings.cache_clear()
     yield

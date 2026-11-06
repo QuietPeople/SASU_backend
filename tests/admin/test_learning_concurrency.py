@@ -163,22 +163,35 @@ def test_stale_version_waits_then_reports_conflict(http, records, postgres_engin
 def test_course_replacements_are_serialized(http, records, postgres_engine, monkeypatch):
     path = f"/api/curriculums/{records['curriculum']}/steps"
     actor = {"X-Actor-Id": str(records["admin"])}
-    assert (
-        http.put(path, headers=actor, json={"content_ids": records["contents"]}).status_code == 200
+    original = http.get(path.removesuffix("/steps") + "?view=editor", headers=actor).json()
+    initial = http.put(
+        path,
+        headers=actor,
+        json={
+            "content_ids": records["contents"],
+            "expected_updated_at": original["summary"]["updated_at"],
+        },
     )
+    assert initial.status_code == 200, initial.text
     with Session(postgres_engine) as first:
         curricula_repository.find_curriculum(first, records["curriculum"], lock=True)
         curricula_repository.replace_steps(first, records["curriculum"], records["contents"][::-1])
         entered = observe_lock(monkeypatch, curricula_repository, "find_curriculum")
         with ThreadPoolExecutor(max_workers=1) as executor:
             pending = executor.submit(
-                http.put, path, headers=actor, json={"content_ids": records["contents"][:1]}
+                http.put,
+                path,
+                headers=actor,
+                json={
+                    "content_ids": records["contents"][:1],
+                    "expected_updated_at": initial.json()["updated_at"],
+                },
             )
             response = commit_then_wait(first, entered, pending)
-        assert response.status_code == 200, response.text
-        assert [step["content_id"] for step in response.json()["items"]] == records["contents"][:1]
+        assert response.status_code == 409, response.text
+        assert response.json()["detail"]["code"] == "EDIT_CONFLICT"
         final = http.get(path + "?view=editor", headers=actor)
-        assert final.json() == response.json()
+        assert [step["content_id"] for step in final.json()["items"]] == records["contents"][::-1]
 
 
 def test_watchers_share_content_lock_and_block_video_edits(records, postgres_engine):

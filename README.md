@@ -53,8 +53,9 @@ SASU_backend/
 ├── demo_seeds/
 │   ├── seed.sql            # 기본 계정·콘텐츠·퀴즈·시리즈·가상 학습 기록
 │   ├── demo_injection.py   # 명시적으로 실행하는 데모 삽입 도구
-│   └── videos/             # 별도 다운로드한 원본 영상, README만 Git에 포함
-├── storage/videos/         # 서버가 실제 제공하는 영상, Git 제외
+│   ├── videos/             # Git에 포함된 데모 원본 영상
+│   └── thumbnails/         # 영상별 첫 프레임 JPEG 썸네일
+├── storage/videos/         # Docker 밖에서 실행할 때의 기본 영상 폴더, Git 제외
 ├── requirements.txt        # 직접·하위 의존성 버전
 ├── pyproject.toml          # 코드 검사·테스트 설정
 ├── Dockerfile
@@ -72,12 +73,12 @@ SASU_backend/
 | `app/core/` | 환경 설정·공통 오류·목업 사용자 및 역할 확인을 담당합니다. `security.py`는 사용자 ID로 역할을 확인하며 로그인·JWT 인증을 제공하지 않습니다. |
 | `app/db/` | 동기 DB 엔진·요청별 세션·ORM 공통 Base를 관리합니다. 개별 테이블 모델은 각 모듈의 `models.py`에 작성하고, `app/db/models.py`에서 등록합니다. |
 | `app/modules/` | 구현된 기능별 라우터·서비스·저장소·스키마·DB 정의를 관리합니다. 관리자·학습자가 함께 쓰는 기능도 같은 모듈을 공유하며 필요한 파일만 구성합니다. |
-| `app/integrations/` | 파일 저장소나 외부 API에 접근하는 코드를 둡니다. 현재 영상 저장 대상은 로컬 `storage/videos/`이며 외부 저장 서비스는 도입하지 않았습니다. |
+| `app/integrations/` | 파일 저장소나 외부 API에 접근하는 코드를 둡니다. Compose에서는 `video_data`·`image_data` 볼륨을 사용하며, 컨테이너 안의 파일 저장소로 접근합니다. |
 | `app/jobs/` | 향후 백그라운드 작업을 위한 예약 위치입니다. 현재 조회수·좋아요·저장 수는 DB 뷰에서 집계합니다. |
 | `alembic/` | 전체 DB 초기 구조와 후속 변경 이력을 관리·적용합니다. 초기 이력은 기능별 ORM 모델 없이 실행할 수 있습니다. |
 | `scripts/` | 직접 실행하는 관리 명령을 둡니다. `check_db.py`는 현재 설정의 DB에 `SELECT 1`을 실행하고 연결을 정리합니다. 데모 삽입 도구는 `demo_seeds/`에 있습니다. |
 | `tests/` | 공통 기반 테스트와 모듈별 테스트를 둡니다. 기본 테스트는 대역·임시 파일·메모리 SQLite 등을 사용합니다. PostgreSQL 통합 테스트는 별도 활성화 조건과 fixture의 데이터 정리 방식을 확인한 후 실행합니다. |
-| `storage/videos/` | 실제 영상 파일을 저장하며 컨테이너의 `/app/storage/videos`에 연결합니다. DB에는 저장 루트 기준 상대 경로를 기록합니다. |
+| `storage/videos/` | Docker 밖에서 실행할 때의 기본 영상 폴더입니다. Compose에서는 호스트 폴더 대신 `video_data`를 `/app/storage/videos`에 연결합니다. DB에는 저장 루트 기준 상대 경로를 기록합니다. |
 
 ## 모듈 내부 역할
 
@@ -204,7 +205,7 @@ docker compose up -d --wait
 - DB 준비 상태를 확인한 후 백엔드를 시작합니다. DB 데이터는 `postgres_data` 이름 있는 볼륨에 보존합니다.
 - 백엔드는 `/openapi.json`의 HTTP 응답으로 프로세스 상태를 검사합니다. DB 연결까지 확인하는 검사는 아니며, `--wait`는 백엔드·DB의 상태 검사가 통과할 때까지 기다립니다.
 - `init: true`로 백엔드 하위 프로세스의 신호 전달·종료 처리를 보조합니다.
-- 영상은 로컬 `storage/videos/`에 저장합니다.
+- 서버 영상은 `video_data`, 썸네일은 `image_data` 볼륨에 저장합니다. 컨테이너 내부 경로는 각각 `/app/storage/videos`, `/app/storage/images`입니다.
 
 이 Compose 파일은 소스 연결과 `--reload`를 사용하는 로컬 개발 구성입니다. 기본 검사는 다음과 같습니다.
 
@@ -225,17 +226,21 @@ PostgreSQL 전용 테스트는 해당 실행 변수를 지정하지 않으면 �
 docker compose run --rm -v ./demo_seeds:/app/demo_seeds:ro backend python -m pytest tests/test_demo_seed_files.py -q
 ```
 
+일반적인 재시작은 `docker compose down` / `up`으로 충분합니다. 전체 데모 초기화에만 `docker compose down -v`를 사용하며 DB·영상·썸네일이 함께 삭제됩니다. 이후 `up --build` → `alembic upgrade head` → 데모 삽입 순서로 다시 구성합니다.
+
 ## 데모 데이터
 
-구글 드라이브에서 받은 원본 영상을 이름 변경 없이 `demo_seeds/videos/` 바로 아래에 넣습니다. 자세한 실행 순서는 [데모 적용 안내](demo_seeds/README.md)를 참고합니다. 서버 영상 저장 위치는 로컬 `storage/videos/`이며 Docker named volume을 사용하지 않습니다.
+데모 원본 영상과 썸네일은 `demo_seeds/videos/`, `demo_seeds/thumbnails/`에 Git으로 함께 관리합니다. 원본은 각각 31개이며 `seed.sql`에 정의한 콘텐츠 25개를 삽입합니다. 자세한 실행 순서는 [데모 적용 안내](demo_seeds/README.md)를 참고합니다. 서버 영상은 `video_data`, 썸네일은 `image_data` 볼륨에 복사합니다. 데모 원본 폴더와 서버 저장소는 별개입니다.
 
 ```sh
 docker compose run --rm -v ./demo_seeds:/app/demo_seeds:ro backend python -m demo_seeds.demo_injection
 ```
 
-처음에는 원본 파일명·크기·SHA-256을 확인하고 서버 저장소로 복사합니다. 이미 적용한 데이터는 유지하되 현재 콘텐츠에 연결된 모든 영상의 존재·크기·읽기 가능 여부를 DB 정보로 확인합니다. 영상이 누락되거나 DB 정보와 맞지 않으면 완료 메시지 대신 문제의 콘텐츠 ID와 파일 경로를 안내하고 중단합니다. 교체 전 영상 자산은 검사하지 않으며 기존 파일을 자동 복구하거나 덮어쓰지 않습니다.
+처음에는 영상·썸네일의 원본 파일명·크기·SHA-256을 확인하고 서버 저장소로 복사합니다. 재실행 시 기존 데이터는 유지하며, 기존 데모 영상에 썸네일이 없으면 이미지만 추가합니다. 직접 등록한 썸네일과 교체한 영상은 유지합니다. 시리즈에 별도 이미지를 등록하지 않고 첫 영상의 썸네일을 사용합니다.
 
-SQL의 삽입과 파일 검사가 모두 성공해야 DB 변경을 확정합니다. 실패하면 이번 실행의 DB 변경과 새로 복사한 파일만 정리합니다. `docker compose down -v`로 DB를 비워도 로컬 서버 영상과 데모 원본은 남습니다. 기존 데모를 완전히 초기화할 때는 해당 서버 사본도 별도로 정리합니다.
+현재 콘텐츠에 연결된 모든 영상과 데모 콘텐츠의 썸네일은 존재·크기·읽기 가능 여부를 DB 정보로 확인합니다. 파일이 누락되거나 DB 정보와 맞지 않으면 완료 메시지 대신 문제의 콘텐츠 ID와 파일 경로를 안내하고 중단합니다. 교체 전 영상 자산은 검사하지 않으며 기존 파일을 자동 복구하거나 덮어쓰지 않습니다.
+
+SQL의 삽입과 파일 검사가 모두 성공해야 DB 변경을 확정합니다. 실패하면 이번 실행의 DB 변경과 새로 복사한 파일만 정리합니다. `docker compose down`은 DB·영상·이미지 볼륨을 유지합니다. `docker compose down -v`는 세 볼륨을 모두 삭제하므로 전체 초기화할 때만 사용합니다. 호스트의 `demo_seeds/` 원본과 이전 `storage/videos/` 폴더는 삭제되지 않습니다.
 
 로그 확인과 종료:
 
@@ -270,7 +275,7 @@ docker compose exec backend alembic upgrade head
 docker compose exec backend alembic current
 ```
 
-`current` 결과가 `0001_initial_schema (head)`이면 초기 적용이 완료된 상태입니다. 이미 적용한 DB에서 `upgrade head`를 다시 실행하면 기존 이력은 재실행하지 않습니다. 이후 변경도 Git으로 받은 새 이력을 같은 명령으로 적용합니다.
+`current` 결과가 저장소의 최신 이력(`alembic heads`)과 일치하면 적용이 완료된 상태입니다. 이미 적용한 DB에서 `upgrade head`를 다시 실행하면 기존 이력은 재실행하지 않습니다. 이후 변경도 Git으로 받은 새 이력을 같은 명령으로 적용합니다.
 
 초기 이력은 `sasu` 스키마에 21개 테이블과 외래키·제약조건·인덱스·검증 트리거·집계 뷰 4개·초기화 함수를 생성합니다. 사용자·카테고리·테스트 데이터를 삽입하지 않으며 초기화 함수도 정의만 합니다. 이력은 기본 `public.alembic_version`에 기록됩니다. 기능별 ORM 모델·Core 테이블·SQL은 이 실제 DB 구조를 참조합니다.
 
@@ -294,3 +299,32 @@ docker compose exec backend alembic revision -m "describe schema change"
 docker compose exec backend alembic upgrade head
 docker compose exec backend alembic current
 ```
+
+## 썸네일 API
+
+콘텐츠와 시리즈 모두 `PUT /api/contents/{id}/thumbnail`, `PUT /api/curriculums/{id}/thumbnail`에 multipart `file` 하나를 보냅니다. 교체도 같은 API를 사용하고, 삭제는 같은 경로의 `DELETE`입니다. 등록·교체·삭제 성공은 204입니다.
+
+- JPEG·PNG·WebP, 최대 10MB. 실제 이미지 디코딩이 실패하면 `422 INVALID_IMAGE`, 용량을 초과하면 `413 IMAGE_TOO_LARGE`, 지원하지 않는 형식이면 `415 UNSUPPORTED_IMAGE_TYPE`입니다.
+- 조회 응답의 `thumbnail_url`을 그대로 사용합니다. 공개 이미지는 기존 캐시 설정을 유지합니다. 관리자 미리보기 URL은 preview=true와 actor_id를 포함하며 공유 캐시에 저장하지 않습니다.
+- 시리즈는 직접 등록한 이미지가 있으면 우선 사용하고, 없으면 편성 순서상 첫 콘텐츠의 썸네일을 사용합니다. 별도의 방식 선택 값은 보내지 않습니다. 첫 콘텐츠나 그 이미지도 없으면 `thumbnail_url`은 null이며 다른 콘텐츠로 대체하지 않습니다.
+- 임시저장 콘텐츠 이미지는 관리자 미리보기로만 제공합니다. 공개된 이용 가능 단계가 없는 시리즈의 이미지도 관리자 전용입니다. 시리즈 첫 콘텐츠가 비공개이면 학습자 자동 참조 이미지는 null입니다.
+- 시리즈 썸네일 PUT은 직접 이미지를 등록·교체하고, DELETE는 직접 이미지만 제거합니다. 삭제 후에는 첫 콘텐츠의 썸네일을 사용하며 콘텐츠 이미지 자체는 삭제하지 않습니다. 직접 등록 이미지가 없으면 DELETE는 404입니다.
+- 썸네일 변경 후 관련 콘텐츠·시리즈 목록과 상세를 재조회합니다. 시리즈 순서 변경이나 첫 콘텐츠의 이미지 교체·삭제도 대표 이미지에 반영됩니다.
+- 편집 요청의 `expected_updated_at`에는 조회한 수정 시각을 그대로 보냅니다. 콘텐츠 기본정보 PATCH, 시리즈 PATCH·단계 PUT에서 불일치하면 `409 EDIT_CONFLICT`입니다. 필수값이며 생략하거나 null이면 422입니다.
+
+기존 썸네일 이미지 연결과 시리즈 편성 정보를 사용하므로 이 동작을 위한 DB 구조 변경은 없습니다. Pillow 의존성 추가 후에는 백엔드 이미지를 재빌드합니다.
+
+## 영상 업로드 중단 후 확인
+
+브라우저의 업로드 취소·응답 대기 종료는 서버 저장 취소를 보장하지 않습니다. 이미 시작된 처리 작업은 DB 연결까지 완료될 수 있습니다.
+
+- 재시도 전 `GET /api/contents/{id}?view=editor`에서 현재 `media_revision`과 영상을 확인합니다. 조회에는 관리자 `X-Actor-Id`가 필요합니다.
+- revision이 그대로여도 처리가 진행 중일 수 있으므로 즉시 실패로 단정하지 않습니다. 바뀌었더라도 다른 관리자의 교체일 수 있으므로 현재 영상까지 확인합니다. 서버 작업 상태·취소 전용 API는 없습니다.
+- 교체 요청은 최신 `expected_media_revision`을 사용합니다. 409이면 최신 정보를 다시 조회합니다.
+- 정상적인 처리 실패 시 임시 파일을 정리하고, DB 연결 실패 시 새 파일을 삭제합니다. 교체 전 파일은 DB 연결 성공 후 제거합니다. 프로세스 강제 종료 등으로 남은 파일까지 즉시 정리되는 것은 아닙니다.
+
+## 영상 입력과 저장 해상도
+
+`GET /api/contents/video-policy`의 `max_long_edge_px`는 입력 상한(3840px), `target_long_edge_px`는 저장 목표(2160px)입니다. 긴 변 3840px 초과는 `422 VIDEO_RESOLUTION_OUT_OF_RANGE`로 거절하고, 허용 범위 중 2160px 초과는 비율·방향을 유지하며 축소합니다. 2160px 이하는 확대하지 않습니다. 용량·길이 제한은 별도로 적용합니다.
+
+8비트 YUV 4:2:0 영상과 허용 프로필(H.264 Baseline·Constrained Baseline·Main·High, VP8, VP9 Profile 0, AV1 Main)을 검사합니다. 코덱별 기존 컨테이너·음성 규칙은 유지합니다. 저장 전 전체 영상·음성 디코딩 검사(최대 120초)를 수행하며 손상은 `422 INVALID_VIDEO`, 검사 시간 초과는 `422 VIDEO_INSPECTION_TIMEOUT`으로 거절합니다. 이 검사는 모든 브라우저·기기의 재생을 보증하는 것은 아닙니다.

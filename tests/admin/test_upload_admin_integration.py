@@ -6,6 +6,7 @@ from uuid import uuid4
 from sqlalchemy import text
 
 from app.core.config import get_settings
+from tests.edit_helpers import course_edit_body
 
 
 def payload(response, status=200):
@@ -81,6 +82,10 @@ def test_uploaded_content_connects_to_quiz_course_statistics_and_reset(client, d
         )
     )
     assert video["video_duration"] > 0 and video["media_revision"]
+    editor = payload(client.get(f"/api/contents/{content_id}?view=editor", headers=admin))
+    generated_image = client.get(editor["detail"]["content"]["thumbnail_url"])
+    assert generated_image.status_code == 200
+    assert generated_image.headers["content-type"] == "image/jpeg"
     question = payload(
         client.post(
             f"/api/contents/{content_id}/question",
@@ -105,10 +110,20 @@ def test_uploaded_content_connects_to_quiz_course_statistics_and_reset(client, d
     course_id = course["summary"]["curriculum_id"]
     steps = payload(
         client.put(
-            f"/api/curriculums/{course_id}/steps", headers=admin, json={"content_ids": [content_id]}
+            f"/api/curriculums/{course_id}/steps",
+            headers=admin,
+            json=course_edit_body(
+                client, f"/api/curriculums/{course_id}/steps", admin, {"content_ids": [content_id]}
+            ),
         )
     )
     assert steps["items"][0]["content_id"] == content_id
+    course = payload(client.get(f"/api/curriculums/{course_id}", headers=learner))
+    # 공유 테스트 세션의 조회 트랜잭션을 요청 종료 시 get_db처럼 정리한다.
+    database.rollback()
+    course_image = client.get(course["summary"]["thumbnail_url"])
+    assert course_image.status_code == 200, course_image.text
+    assert course_image.content == generated_image.content
 
     for table in ("content_likes", "saved_contents"):
         database.execute(

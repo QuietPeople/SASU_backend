@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -7,6 +7,8 @@ from app import main
 from app.db.session import get_db
 from app.modules.contents import service, video_service
 from app.modules.contents.schemas import ContentCreate, ContentUpdate
+
+VERSION = datetime(2026, 11, 5, tzinfo=UTC)
 
 
 @pytest.fixture
@@ -62,6 +64,8 @@ def test_reference_ids_reject_wrong_types_and_out_of_range_values(
     monkeypatch.setattr(service, "create_content", unexpected_service_call)
     monkeypatch.setattr(service, "update_content", unexpected_service_call)
     payload = {field: [1, value] if field == "tag_ids" else value}
+    if method == "PATCH":
+        payload["expected_updated_at"] = VERSION.isoformat()
     response = client.request(method, path, headers={"X-Actor-Id": "2"}, json=payload)
 
     assert response.status_code == 422
@@ -82,6 +86,7 @@ def test_reference_ids_reject_wrong_types_and_out_of_range_values(
     ],
 )
 def test_reference_ids_keep_valid_bounds_and_omission_semantics(model, payload):
+    payload = {**payload, **({"expected_updated_at": VERSION} if model is ContentUpdate else {})}
     assert model.model_validate(payload).model_dump(exclude_unset=True) == payload
 
 
@@ -101,7 +106,13 @@ def test_reviewed_on_rejects_non_date_inputs_before_service(
     monkeypatch.setattr(service, "create_content", unexpected_service_call)
     monkeypatch.setattr(service, "update_content", unexpected_service_call)
     response = client.request(
-        method, path, headers={"X-Actor-Id": "2"}, json={"reviewed_on": value}
+        method,
+        path,
+        headers={"X-Actor-Id": "2"},
+        json={
+            "reviewed_on": value,
+            **({"expected_updated_at": VERSION.isoformat()} if method == "PATCH" else {}),
+        },
     )
     assert response.status_code == 422
     detail = response.json()["detail"]
@@ -115,7 +126,13 @@ def test_reviewed_on_rejects_non_date_inputs_before_service(
     [("2026-10-29", date(2026, 10, 29)), (" 2024-02-29 ", date(2024, 2, 29)), (None, None)],
 )
 def test_reviewed_on_keeps_calendar_dates_and_null(model, value, expected):
-    assert model(reviewed_on=value).reviewed_on == expected
+    assert (
+        model(
+            reviewed_on=value,
+            **({"expected_updated_at": VERSION} if model is ContentUpdate else {}),
+        ).reviewed_on
+        == expected
+    )
 
 
 @pytest.mark.parametrize(
@@ -125,7 +142,8 @@ def test_reviewed_on_keeps_calendar_dates_and_null(model, value, expected):
         ("POST", "/api/contents", {"json": {}}),
         ("PATCH", "/api/contents/1", {"json": {"title": "수정"}}),
         (
-            "PUT", "/api/contents/1/video",
+            "PUT",
+            "/api/contents/1/video",
             {"files": {"file": ("sample.mp4", b"contract-only", "video/mp4")}},
         ),
         ("POST", "/api/contents/1/publish", {}),
@@ -155,10 +173,14 @@ def test_actor_header_requirement_and_preview_actor_validation(client):
 
 
 def test_patch_preserves_omitted_fields_and_explicit_clears():
-    patch = ContentUpdate(title="  수정 제목  ")
-    assert patch.model_dump(exclude_unset=True) == {"title": "수정 제목"}
-    patch = ContentUpdate(source=None, tag_ids=[], caution_enabled=False)
-    assert patch.model_dump(exclude_unset=True) == {
+    patch = ContentUpdate(expected_updated_at=VERSION, title="  수정 제목  ")
+    assert patch.model_dump(exclude_unset=True, exclude={"expected_updated_at"}) == {
+        "title": "수정 제목"
+    }
+    patch = ContentUpdate(
+        expected_updated_at=VERSION, source=None, tag_ids=[], caution_enabled=False
+    )
+    assert patch.model_dump(exclude_unset=True, exclude={"expected_updated_at"}) == {
         "source": None,
         "tag_ids": [],
         "caution_enabled": False,

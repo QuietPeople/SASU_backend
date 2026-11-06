@@ -54,7 +54,8 @@ def _page(session, source, order, params, page, size, *, columns="", joins=""):
 
 def list_wrong_answers(session: Session, user_id: int, epoch: int, status: str, query):
     source = f"""SELECT {CARD_COLUMNS}, v.question_type, w.status, w.wrong_count,
-                        w.first_wrong_at, w.last_wrong_at, w.resolved_at, c.video_asset_id
+                        w.first_wrong_at, w.last_wrong_at, w.resolved_at, c.video_asset_id,
+                        c.thumbnail_image_id
                  {CURRENT_QUESTION}
                  JOIN sasu.wrong_answers w ON w.quiz_version_id = v.quiz_version_id
                  WHERE {CATEGORY_FILTER}
