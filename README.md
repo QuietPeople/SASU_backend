@@ -53,7 +53,8 @@ SASU_backend/
 ├── demo_seeds/
 │   ├── seed.sql            # 기본 계정·콘텐츠·퀴즈·시리즈·가상 학습 기록
 │   ├── demo_injection.py   # 명시적으로 실행하는 데모 삽입 도구
-│   └── videos/             # 별도 다운로드한 원본 영상, README만 Git에 포함
+│   ├── videos/             # Git에 포함된 데모 원본 영상
+│   └── thumbnails/         # 영상별 첫 프레임 JPEG 썸네일
 ├── storage/videos/         # Docker 밖에서 실행할 때의 기본 영상 폴더, Git 제외
 ├── requirements.txt        # 직접·하위 의존성 버전
 ├── pyproject.toml          # 코드 검사·테스트 설정
@@ -229,15 +230,17 @@ docker compose run --rm -v ./demo_seeds:/app/demo_seeds:ro backend python -m pyt
 
 ## 데모 데이터
 
-구글 드라이브에서 받은 원본 영상을 이름 변경 없이 `demo_seeds/videos/` 바로 아래에 넣습니다. 자세한 실행 순서는 [데모 적용 안내](demo_seeds/README.md)를 참고합니다. 서버 영상은 `video_data` 볼륨에 저장합니다. 데모 원본 폴더와 서버 저장소는 별개입니다.
+데모 원본 영상과 썸네일은 `demo_seeds/videos/`, `demo_seeds/thumbnails/`에 Git으로 함께 관리합니다. 원본은 각각 31개이며 `seed.sql`에 정의한 콘텐츠 25개를 삽입합니다. 자세한 실행 순서는 [데모 적용 안내](demo_seeds/README.md)를 참고합니다. 서버 영상은 `video_data`, 썸네일은 `image_data` 볼륨에 복사합니다. 데모 원본 폴더와 서버 저장소는 별개입니다.
 
 ```sh
 docker compose run --rm -v ./demo_seeds:/app/demo_seeds:ro backend python -m demo_seeds.demo_injection
 ```
 
-처음에는 원본 파일명·크기·SHA-256을 확인하고 서버 저장소로 복사합니다. 이미 적용한 데이터는 유지하되 현재 콘텐츠에 연결된 모든 영상의 존재·크기·읽기 가능 여부를 DB 정보로 확인합니다. 영상이 누락되거나 DB 정보와 맞지 않으면 완료 메시지 대신 문제의 콘텐츠 ID와 파일 경로를 안내하고 중단합니다. 교체 전 영상 자산은 검사하지 않으며 기존 파일을 자동 복구하거나 덮어쓰지 않습니다.
+처음에는 영상·썸네일의 원본 파일명·크기·SHA-256을 확인하고 서버 저장소로 복사합니다. 재실행 시 기존 데이터는 유지하며, 기존 데모 영상에 썸네일이 없으면 이미지만 추가합니다. 직접 등록한 썸네일과 교체한 영상은 유지합니다. 시리즈에 별도 이미지를 등록하지 않고 첫 영상의 썸네일을 사용합니다.
 
-SQL의 삽입과 파일 검사가 모두 성공해야 DB 변경을 확정합니다. 실패하면 이번 실행의 DB 변경과 새로 복사한 파일만 정리합니다. `docker compose down`은 DB·영상·이미지 볼륨을 유지합니다. `docker compose down -v`는 세 볼륨을 모두 삭제하므로 전체 초기화할 때만 사용합니다. 호스트의 `demo_seeds/videos/` 원본과 이전 `storage/videos/` 폴더는 삭제되지 않습니다.
+현재 콘텐츠에 연결된 모든 영상과 데모 콘텐츠의 썸네일은 존재·크기·읽기 가능 여부를 DB 정보로 확인합니다. 파일이 누락되거나 DB 정보와 맞지 않으면 완료 메시지 대신 문제의 콘텐츠 ID와 파일 경로를 안내하고 중단합니다. 교체 전 영상 자산은 검사하지 않으며 기존 파일을 자동 복구하거나 덮어쓰지 않습니다.
+
+SQL의 삽입과 파일 검사가 모두 성공해야 DB 변경을 확정합니다. 실패하면 이번 실행의 DB 변경과 새로 복사한 파일만 정리합니다. `docker compose down`은 DB·영상·이미지 볼륨을 유지합니다. `docker compose down -v`는 세 볼륨을 모두 삭제하므로 전체 초기화할 때만 사용합니다. 호스트의 `demo_seeds/` 원본과 이전 `storage/videos/` 폴더는 삭제되지 않습니다.
 
 로그 확인과 종료:
 
