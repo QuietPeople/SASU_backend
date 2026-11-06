@@ -120,7 +120,9 @@ def upload_video(
                 video_url=build_video_url(
                     content.content_id,
                     revision,
-                    preview_actor_id=actor_id if content.status == ContentStatus.DRAFT else None,
+                    preview_actor_id=(
+                        actor_id if content.status != ContentStatus.PUBLISHED else None
+                    ),
                 ),
                 video_duration=float(asset.duration_seconds),
                 media_revision=revision,

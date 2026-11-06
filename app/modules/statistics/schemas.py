@@ -57,7 +57,7 @@ class Overview(BaseModel):
 
 class ContentQuery(PageQuery):
     category_id: int | None = Field(default=None, gt=0, le=MAX_BIGINT)
-    status: Literal["DRAFT", "PUBLISHED", "ALL"] = "ALL"
+    status: Literal["DRAFT", "PUBLISHED", "PRIVATE", "ALL"] = "ALL"
 
 
 class ResponseQuery(PageQuery):

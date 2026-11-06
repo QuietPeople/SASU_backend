@@ -22,14 +22,17 @@ from app.core.config import get_settings
 from app.core.exceptions import ApiError, ErrorResponse
 from app.db.session import get_db
 from app.integrations.storage import LocalVideoStorage
-from app.modules.contents import service, thumbnail_service, video_service
+from app.modules.contents import lifecycle, service, thumbnail_service, video_service
 from app.modules.contents.schemas import (
     ContentCreate,
+    ContentDelete,
+    ContentDeleted,
     ContentDetail,
     ContentDetailQuery,
     ContentListQuery,
     ContentPage,
     ContentUpdate,
+    ContentVersion,
     EditableContent,
     ThumbnailQuery,
     VideoInfo,
@@ -377,8 +380,54 @@ def delete_thumbnail(
     ),
 )
 def publish_content(
-    content_id: ContentId, actor_id: ActorId, session: Annotated[Session, Depends(get_db)]
+    content_id: ContentId,
+    actor_id: ActorId,
+    session: Annotated[Session, Depends(get_db)],
+    body: ContentVersion | None = None,
 ):
     return service.publish_content(
-        session, actor_id, content_id, LocalVideoStorage(get_settings().video_storage_root)
+        session,
+        actor_id,
+        content_id,
+        LocalVideoStorage(get_settings().video_storage_root),
+        body.expected_updated_at if body else None,
     )
+
+
+@router.post(
+    "/{content_id}/unpublish",
+    response_model=EditableContent,
+    operation_id="API-CNT-09",
+    dependencies=[Depends(reject_query_parameters)],
+    summary="콘텐츠 비공개 전환",
+    description=(
+        "학습 기록과 편성은 보존하며 학습자 조회·진도에서 제외합니다. 재공개 시 다시 반영합니다."
+    ),
+)
+def unpublish_content(
+    content_id: ContentId,
+    body: ContentVersion,
+    actor_id: ActorId,
+    session: Annotated[Session, Depends(get_db)],
+):
+    return lifecycle.unpublish_content(session, actor_id, content_id, body)
+
+
+@router.delete(
+    "/{content_id}",
+    response_model=ContentDeleted,
+    operation_id="API-CNT-10",
+    dependencies=[Depends(reject_query_parameters)],
+    summary="콘텐츠 영구 삭제",
+    description=(
+        "confirm=true와 편집 시각을 확인하고 모든 세대의 관련 기록·퀴즈·편성을 제거합니다. "
+        "공유 자료는 보존합니다. 파일 정리 실패 시 file_cleanup_pending=true를 반환합니다."
+    ),
+)
+def delete_content(
+    content_id: ContentId,
+    body: ContentDelete,
+    actor_id: ActorId,
+    session: Annotated[Session, Depends(get_db)],
+):
+    return lifecycle.delete_content(session, actor_id, content_id, body)

@@ -20,7 +20,7 @@ from app.modules.tags.schemas import TagRead
 StrictResourceId = Annotated[ResourceId, Field(strict=True)]
 NonBlankText = Annotated[str, Field(min_length=1)]
 Title = Annotated[str, Field(min_length=1, max_length=200)]
-ContentStatus = Literal["DRAFT", "PUBLISHED"]
+ContentStatus = Literal["DRAFT", "PUBLISHED", "PRIVATE"]
 
 
 class ApiModel(BaseModel):
@@ -35,7 +35,7 @@ class ContentListQuery(InputModel, PageQuery):
     missing: Literal["video", "learning_material", "either"] | None = None
     q: Annotated[str, Field(max_length=200)] | None = None
     category_id: ResourceId | None = None
-    status: Literal["DRAFT", "PUBLISHED", "ALL"] | None = Field(
+    status: Literal["DRAFT", "PUBLISHED", "PRIVATE", "ALL"] | None = Field(
         default=None, description="생략 시 역할에 따라 결정: ADMIN=ALL, LEARNER=PUBLISHED."
     )
     user_id: ResourceId | None = None
@@ -168,6 +168,26 @@ class EditableContent(ApiModel):
     created_at: AwareDatetime
     updated_at: AwareDatetime
     missing_for_publish: list[str]
+
+
+class ContentVersion(InputModel):
+    expected_updated_at: AwareDatetime
+
+
+class ContentDelete(ContentVersion):
+    confirm: StrictBool
+
+    @field_validator("confirm")
+    @classmethod
+    def require_confirmation(cls, value: bool) -> bool:
+        if not value:
+            raise ValueError("영구 삭제에는 confirm=true가 필요합니다.")
+        return value
+
+
+class ContentDeleted(ApiModel):
+    content_id: ResourceId
+    file_cleanup_pending: bool
 
 
 class VideoInfo(ApiModel):

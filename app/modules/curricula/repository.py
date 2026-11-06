@@ -14,7 +14,8 @@ _SUMMARY_SELECT = """
     COALESCE(c.thumbnail_image_id, (
         SELECT CASE WHEN content.status = 'PUBLISHED' THEN content.thumbnail_image_id END
         FROM sasu.curriculum_items i JOIN sasu.contents content USING (content_id)
-        WHERE i.curriculum_id = c.curriculum_id ORDER BY i.position LIMIT 1
+        WHERE i.curriculum_id = c.curriculum_id AND content.status <> 'PRIVATE'
+        ORDER BY i.position LIMIT 1
     )) AS public_thumbnail_image_id
     FROM sasu.curricula c
 """

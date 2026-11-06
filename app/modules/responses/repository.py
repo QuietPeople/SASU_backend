@@ -17,9 +17,12 @@ def find_response(session: Session, response_id: int, actor: Actor):
                        w.wrong_count, w.resolved_at
                 FROM sasu.quiz_responses r
                 JOIN sasu.quiz_attempts a ON a.attempt_id = r.attempt_id
+                JOIN sasu.quizzes q ON q.quiz_id = a.quiz_id
+                JOIN sasu.contents c ON c.content_id = q.content_id
                 LEFT JOIN sasu.wrong_answers w
                   ON w.user_id = a.user_id AND w.quiz_version_id = r.quiz_version_id
                 WHERE r.response_id = :id AND (a.user_id = :actor_id OR :is_admin)
+                  AND (:is_admin OR c.status <> 'PRIVATE')
                 """
             ),
             {"id": response_id, "actor_id": actor.user_id, "is_admin": actor.role == "ADMIN"},
@@ -40,9 +43,11 @@ def list_response_rows(session: Session, ids: list[int], actor: Actor):
             FROM unnest(CAST(:ids AS bigint[])) WITH ORDINALITY wanted(id, ord)
             JOIN sasu.quiz_responses r ON r.response_id=wanted.id
             JOIN sasu.quiz_attempts a USING(attempt_id)
+            JOIN sasu.quizzes q ON q.quiz_id=a.quiz_id
+            JOIN sasu.contents c ON c.content_id=q.content_id
             LEFT JOIN sasu.wrong_answers w ON w.user_id=a.user_id
                 AND w.quiz_version_id=r.quiz_version_id
-            WHERE a.user_id=:actor OR :admin
+            WHERE (a.user_id=:actor OR :admin) AND (:admin OR c.status <> 'PRIVATE')
         ), version_ids AS MATERIALIZED (
             SELECT DISTINCT quiz_version_id FROM visible
         ), options AS MATERIALIZED (
