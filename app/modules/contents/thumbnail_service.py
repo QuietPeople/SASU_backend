@@ -81,10 +81,21 @@ def _delete_safe(storage: LocalImageStorage, path: str) -> None:
 # ── 콘텐츠 썸네일 ─────────────────────────────────────────────────────────────
 
 
-def put_content_thumbnail(session: Session, content_id: int, actor_id: int, data: bytes) -> None:
+def prepare_thumbnail(data: bytes) -> ImageAsset:
+    """파일만 저장한다. DB 연결·실패 시 파일 정리는 호출한 서비스가 담당한다."""
     mime = _validate(data)
     storage = LocalImageStorage(get_settings().image_storage_root)
     relative_path = _write(data, mime, storage)
+    return ImageAsset(storage_path=relative_path, mime_type=mime, size_bytes=len(data))
+
+
+def discard_thumbnail(path: str) -> None:
+    _delete_safe(LocalImageStorage(get_settings().image_storage_root), path)
+
+
+def put_content_thumbnail(session: Session, content_id: int, actor_id: int, data: bytes) -> None:
+    asset = prepare_thumbnail(data)
+    relative_path = asset.storage_path
     try:
         with session.begin():
             require_admin(session, actor_id)
@@ -98,18 +109,13 @@ def put_content_thumbnail(session: Session, content_id: int, actor_id: int, data
                     old_path = old.storage_path
                     session.delete(old)
                     session.flush()
-            asset = ImageAsset(
-                storage_path=relative_path,
-                mime_type=mime,
-                size_bytes=len(data),
-            )
             session.add(asset)
             session.flush()
             content.thumbnail_image_id = asset.image_asset_id
         if old_path:
-            _delete_safe(storage, old_path)
+            discard_thumbnail(old_path)
     except Exception:
-        _delete_safe(storage, relative_path)
+        discard_thumbnail(relative_path)
         raise
 
 

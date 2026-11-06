@@ -224,7 +224,7 @@ def get_video(
             "model": ErrorResponse,
             "description": "요청·영상 검증 실패, 길이 범위 밖, 검사 시간 초과",
         },
-        500: {"model": ErrorResponse, "description": "영상 변환 또는 저장 실패"},
+        500: {"model": ErrorResponse, "description": "영상 변환·썸네일 추출 또는 저장 실패"},
         503: {"model": ErrorResponse, "description": "서버 영상 처리 도구(ffmpeg) 사용 불가"},
     },
     description=(
@@ -234,6 +234,9 @@ def get_video(
         "서버가 파일 내용으로 형식을 판별하고(확장자·MIME 미사용) ffprobe로 코덱·길이·해상도를 "
         "검사한 뒤, 웹 재생용으로 정규화(MP4 faststart, 메타데이터 제거)해 저장합니다. "
         "허용 조건은 GET /api/contents/video-policy로 확인합니다. "
+        "generate_thumbnail은 기본 true이며, 썸네일이 없으면 저장본의 첫 프레임을 JPEG로 "
+        "추출합니다. 직접 등록할 이미지를 선택했다면 false를 보내 생성을 생략하세요. "
+        "기존 썸네일은 영상 교체 시에도 유지합니다. 추출 실패 시 이번 영상 연결은 취소됩니다. "
         "클라이언트가 요청을 중단해도 시작된 서버 작업은 완료될 수 있습니다. "
         "재시도 전 편집 상세를 조회해 media_revision과 현재 영상을 확인하세요."
     ),
@@ -251,12 +254,18 @@ async def upload_video(
     expected_media_revision: Annotated[
         str | None, Form(min_length=1, description="최초 연결 시 생략, 교체 시 필수")
     ] = None,
+    generate_thumbnail: Annotated[
+        bool,
+        Form(description="썸네일 미등록 시 첫 프레임 자동 추출. 직접 이미지 등록 예정이면 false"),
+    ] = True,
 ):
     form = await request.form()
     if (
-        set(form) - {"file", "expected_media_revision"}
+        set(form) - {"file", "expected_media_revision", "generate_thumbnail"}
         or len(form.getlist("file")) != 1
         or len(form.getlist("expected_media_revision")) > 1
+        or len(form.getlist("generate_thumbnail")) > 1
+        or ("generate_thumbnail" in form and not str(form["generate_thumbnail"]).strip())
     ):
         raise HTTPException(
             status_code=422,
@@ -283,6 +292,7 @@ async def upload_video(
         ingest,
         file.filename or "",
         expected_media_revision,
+        generate_thumbnail,
     )
 
 

@@ -1,8 +1,10 @@
 import shutil
 import subprocess
+from io import BytesIO
 from uuid import uuid4
 
 import pytest
+from PIL import Image
 
 from app.core.config import get_settings
 from app.integrations.ffmpeg import ProbeResult
@@ -25,6 +27,12 @@ class StubVideoIngest(VideoIngestService):
 
     def __init__(self) -> None:
         super().__init__(LocalVideoStorage(get_settings().video_storage_root), VideoPolicy())
+
+    def extract_thumbnail(self, video):
+        data = BytesIO()
+        with Image.new("RGB", (32, 32), "blue") as image:
+            image.save(data, format="JPEG")
+        return data.getvalue()
 
     def ingest(self, src, original_name):
         data = src.read()

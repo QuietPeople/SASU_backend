@@ -1,7 +1,7 @@
 """콘텐츠 영상 업로드·교체와 재생 파일 제공.
 
 업로드한 파일의 검증·분석·정규화·저장은 데이터 처리 모듈(app.modules.videos)이 맡고,
-여기서는 권한·revision 확인과 video_assets 연결(DB)만 처리한다.
+여기서는 권한·revision 확인과 영상·자동 썸네일의 DB 연결을 처리한다.
 영상 처리는 시간이 걸려 DB 트랜잭션 밖에서 수행하고, DB 저장이 실패하면 새 파일을 지운다.
 """
 
@@ -17,13 +17,14 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import ApiError
 from app.integrations.storage import LocalVideoStorage
-from app.modules.contents import repository
+from app.modules.contents import repository, thumbnail_service
 from app.modules.contents.models import Content, ContentStatus, VideoAsset
 from app.modules.contents.schemas import VideoInfo, VideoQuery
 from app.modules.contents.urls import build_video_url
 from app.modules.users.models import UserRole
 from app.modules.users.service import get_actor, require_admin
 from app.modules.videos.availability import is_video_available
+from app.modules.videos.errors import ThumbnailGenerationFailed
 from app.modules.videos.service import IngestedVideo, VideoIngestService
 
 logger = logging.getLogger(__name__)
@@ -63,21 +64,37 @@ def upload_video(
     ingest: VideoIngestService,
     original_name: str,
     expected_media_revision: str | None = None,
+    generate_thumbnail: bool = True,
 ) -> VideoInfo:
     # 1) 가벼운 검사 먼저: 권한·콘텐츠·revision이 틀리면 영상을 처리하지 않는다.
     with session.begin():
-        _upload_target(session, actor_id, content_id, expected_media_revision)
+        has_thumbnail = (
+            _upload_target(session, actor_id, content_id, expected_media_revision)[
+                0
+            ].thumbnail_image_id
+            is not None
+        )
 
-    # 2) 영상 처리(트랜잭션 밖): 검증·분석·정규화·저장. 실패하면 파일이 남지 않는다.
-    try:
-        stream.seek(0)
-        video: IngestedVideo = ingest.ingest(stream, original_name)
-    except OSError as exc:
-        raise ApiError(500, "INTERNAL_ERROR", "영상 파일 저장에 실패했습니다.") from exc
-
-    # 3) DB 연결. 그 사이 다른 교체가 끝났을 수 있어 다시 확인한다.
+    # 2) 영상·썸네일 처리는 트랜잭션 밖에서 수행하고, DB에는 함께 연결한다.
+    video: IngestedVideo | None = None
+    thumbnail = None
+    thumbnail_path = None
+    thumbnail_attached = False
     old_path = None
     try:
+        stream.seek(0)
+        video = ingest.ingest(stream, original_name)
+        if generate_thumbnail and not has_thumbnail:
+            data = ingest.extract_thumbnail(video)
+            try:
+                thumbnail = thumbnail_service.prepare_thumbnail(data)
+            except ApiError as exc:
+                raise ThumbnailGenerationFailed(
+                    "추출한 썸네일 이미지를 저장하지 못했습니다."
+                ) from exc
+            thumbnail_path = thumbnail.storage_path
+
+        # 3) 처리 중 직접 이미지가 등록됐으면 그 이미지를 우선하고 추출본은 정리한다.
         with session.begin():
             content, old_asset = _upload_target(
                 session, actor_id, content_id, expected_media_revision
@@ -92,6 +109,11 @@ def upload_video(
                 duration_seconds=video.duration_decimal,
             )
             repository.attach_video(session, content, asset)
+            if thumbnail is not None and content.thumbnail_image_id is None:
+                session.add(thumbnail)
+                session.flush()
+                content.thumbnail_image_id = thumbnail.image_asset_id
+                thumbnail_attached = True
             revision = str(asset.video_asset_id)
             result = VideoInfo(
                 content_id=content.content_id,
@@ -105,12 +127,17 @@ def upload_video(
                 status=content.status,
             )
     except Exception as exc:
-        video.discard()
+        if video is not None:
+            video.discard()
+        if thumbnail_path is not None:
+            thumbnail_service.discard_thumbnail(thumbnail_path)
         if isinstance(exc, (OSError, SQLAlchemyError)):
             raise ApiError(
                 500, "INTERNAL_ERROR", "영상 파일 또는 콘텐츠 저장에 실패했습니다."
             ) from exc
         raise
+    if thumbnail_path is not None and not thumbnail_attached:
+        thumbnail_service.discard_thumbnail(thumbnail_path)
     # 방문 기록은 이전 자산 UUID를 참조하므로 자산 행은 보존한다.
     # 구 파일만 커밋 성공 뒤 제거하며, 정리 실패가 이미 성공한 교체를 실패로 바꾸지는 않는다.
     if old_path is not None:

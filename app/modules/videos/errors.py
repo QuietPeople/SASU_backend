@@ -61,5 +61,9 @@ class ProcessingFailed(VideoError):
     status, error_code, reason = 500, "VIDEO_PROCESSING_FAILED", "processing_failed"
 
 
+class ThumbnailGenerationFailed(ProcessingFailed):
+    error_code, reason = "THUMBNAIL_GENERATION_FAILED", "thumbnail_generation_failed"
+
+
 class MediaToolMissing(VideoError):
     status, error_code, reason = 503, "VIDEO_PROCESSING_UNAVAILABLE", "tool_unavailable"

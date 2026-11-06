@@ -19,6 +19,7 @@ from typing import BinaryIO
 
 from app.integrations.ffmpeg import (
     ProbeResult,
+    extract_first_frame,
     probe,
     remux,
     scale_and_remux,
@@ -213,6 +214,15 @@ class VideoIngestService:
     def __init__(self, storage: LocalVideoStorage, policy: VideoPolicy) -> None:
         self.storage = storage
         self.policy = policy
+
+    def extract_thumbnail(self, video: IngestedVideo) -> bytes:
+        """정규화된 저장본에서 첫 프레임을 읽고 추출용 임시 파일을 정리한다."""
+        tmp = self.storage.temp_file(".jpg")
+        try:
+            extract_first_frame(self.storage.resolve_path(video.storage_path), tmp, video.probe)
+            return tmp.read_bytes()
+        finally:
+            tmp.unlink(missing_ok=True)
 
     def receive(self, src: BinaryIO) -> tuple[Path, str, bytes]:
         """업로드 스트림을 임시 파일로 복사한다. 크기 제한을 넘는 순간 중단한다."""

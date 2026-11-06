@@ -18,7 +18,7 @@ from app.integrations import ffmpeg
 from app.integrations.storage import LocalVideoStorage
 from app.modules.categories.models import Category
 from app.modules.contents import repository
-from app.modules.contents.models import Content, ContentTag, VideoAsset
+from app.modules.contents.models import Content, ContentTag, ImageAsset, VideoAsset
 from app.modules.tags.models import Tag
 from app.modules.users.models import User, UserRole
 from app.modules.videos import service as video_processing
@@ -348,6 +348,9 @@ def test_database_failure_rolls_back_and_removes_new_file(
     with factory() as session:
         assert session.get(Content, content_id).video_asset_id is None
         assert session.scalar(select(func.count()).select_from(VideoAsset)) == 0
+        assert session.scalar(select(func.count()).select_from(ImageAsset)) == 0
+    image_root = get_settings().image_storage_root
+    assert not image_root.exists() or list(image_root.iterdir()) == []
 
 
 def test_unknown_content_does_not_create_file(upload_context, stored_files):

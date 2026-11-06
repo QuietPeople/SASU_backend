@@ -18,6 +18,7 @@ from app.modules.videos.errors import (
     ProbeFailed,
     ProbeTimeout,
     ProcessingFailed,
+    ThumbnailGenerationFailed,
     UnsupportedMedia,
 )
 
@@ -300,6 +301,52 @@ def remux(
         # 서버 경로가 담길 수 있어 응답에는 넣지 않고 로그로만 남긴다.
         logger.error("ffmpeg remux failed: %s", proc.stderr.decode(errors="replace")[-500:])
         raise ProcessingFailed("영상을 저장 형식으로 변환하지 못했습니다.")
+
+
+def extract_first_frame(
+    src: Path, dst: Path, streams: ProbeResult, *, timeout: float = 20.0
+) -> None:
+    """저장본의 첫 영상 프레임을 JPEG로 추출한다. 회전은 픽셀에 반영한다."""
+    cmd = [
+        _binary("ffmpeg"),
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-y",
+        "-protocol_whitelist",
+        "file",
+        "-i",
+        str(src),
+        "-map",
+        f"0:{streams.video_stream_index}",
+        "-frames:v",
+        "1",
+        "-an",
+        "-sn",
+        "-map_metadata",
+        "-1",
+        "-vf",
+        "scale=iw*sar:ih,setsar=1",
+        "-c:v",
+        "mjpeg",
+        "-q:v",
+        "2",
+        "-update",
+        "1",
+        str(dst),
+    ]
+    try:
+        proc = subprocess.run(
+            cmd, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout, check=False
+        )
+    except subprocess.TimeoutExpired as exc:
+        dst.unlink(missing_ok=True)
+        raise ThumbnailGenerationFailed("썸네일 추출 제한 시간을 초과했습니다.") from exc
+    if proc.returncode != 0 or not dst.exists() or dst.stat().st_size == 0:
+        dst.unlink(missing_ok=True)
+        logger.error("ffmpeg thumbnail failed: %s", proc.stderr.decode(errors="replace")[-500:])
+        raise ThumbnailGenerationFailed("영상의 첫 프레임을 썸네일로 추출하지 못했습니다.")
 
 
 def validate_decoding(path: Path, streams: ProbeResult, *, timeout: float) -> None:
