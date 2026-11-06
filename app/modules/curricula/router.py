@@ -33,7 +33,14 @@ Writes = [Depends(require_admin), Depends(reject_query_parameters)]
 
 
 @router.get(
-    "/curriculums", response_model=Page[CurriculumSummary], summary="API-CRS-01 커리큘럼 목록 조회"
+    "/curriculums",
+    response_model=Page[CurriculumSummary],
+    summary="API-CRS-01 커리큘럼 목록 조회",
+    description=(
+        "q로 제목·설명을 대소문자 구분 없이 부분 검색합니다. 앞뒤 공백을 제외하고 최대 200자이며 "
+        "빈 검색어는 전체 조회입니다. 검색 및 조회 권한 조건을 적용한 "
+        "전체 개수와 페이지를 반환합니다."
+    ),
 )
 def get_list(
     query: Annotated[CurriculumListQuery, Query()], actor: CurrentActor, session: Database

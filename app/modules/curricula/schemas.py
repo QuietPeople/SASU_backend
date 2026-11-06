@@ -12,7 +12,9 @@ class CurriculumQuery(ViewQuery):
 
 
 class CurriculumListQuery(CurriculumQuery, PageQuery):
-    pass
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    q: str = Field(default="", max_length=200)
 
 
 class CurriculumInput(BaseModel):

@@ -142,23 +142,36 @@ def get_detail(
 
 def get_list(session: Session, query: CurriculumListQuery, actor: Actor) -> Page[CurriculumSummary]:
     user_id = target_user(session, query, actor)
-    curricula = repository.list_curricula(session)
+    start = page_offset(query.page, query.size)
+    if query.view == "editor":
+        total = repository.count_curricula(session, query.q)
+        curricula = repository.list_curricula(session, query.q, offset=start, limit=query.size)
+    else:
+        curricula = repository.list_curricula(session, query.q)
     counts = defaultdict(lambda: [0, 0, 0])
-    for row in repository.list_step_states(session, user_id):
+    for row in repository.list_step_states(
+        session, [c["curriculum_id"] for c in curricula], user_id
+    ):
         state = counts[row["curriculum_id"]]
         state[0] += 1
         state[1] += row["status"] == "PUBLISHED" and is_video_row_available(row)
         state[2] += int(row["completed"])
-    eligible = [c for c in curricula if query.view == "editor" or counts[c["curriculum_id"]][1]]
-    start = page_offset(query.page, query.size)
+    if query.view == "learner":
+        curricula = [c for c in curricula if counts[c["curriculum_id"]][1]]
+        total = len(curricula)
+        curricula = curricula[start : start + query.size]
     summaries = []
-    for curriculum in eligible[start : start + query.size]:
-        total, available, completed = counts[curriculum["curriculum_id"]]
-        percent = float(round(Decimal(completed) * 100 / total, 2)) if total and user_id else None
+    for curriculum in curricula:
+        step_count, available, completed = counts[curriculum["curriculum_id"]]
+        percent = (
+            float(round(Decimal(completed) * 100 / step_count, 2))
+            if step_count and user_id
+            else None
+        )
         summaries.append(
             summary_from_counts(
                 curriculum,
-                total,
+                step_count,
                 available,
                 completed if user_id else None,
                 percent,
@@ -169,8 +182,8 @@ def get_list(session: Session, query: CurriculumListQuery, actor: Actor) -> Page
         items=summaries,
         page=query.page,
         size=query.size,
-        total=len(eligible),
-        has_next=query.page * query.size < len(eligible),
+        total=total,
+        has_next=start + query.size < total,
     )
 
 
