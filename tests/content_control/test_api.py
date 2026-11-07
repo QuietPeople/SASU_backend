@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from alembic import command
 from app.core.config import PROJECT_ROOT, get_settings
 from app.integrations.storage import LocalVideoStorage
-from app.modules.contents import lifecycle_repository
+from app.modules.contents import deletion_repository
 
 
 def editor(ctx, content_id=None):
@@ -238,14 +238,14 @@ def test_database_failure_rolls_back_history_and_preserves_files(context, monkey
     ctx = context
     seed_history(ctx)
     image(ctx)
-    original = lifecycle_repository.delete_owned_rows
+    original = deletion_repository.delete_owned_rows
     paths = list(get_settings().video_storage_root.iterdir())
 
     def fail(session, content):
         original(session, content)
         raise OperationalError("forced failure", {}, Exception())
 
-    monkeypatch.setattr(lifecycle_repository, "delete_owned_rows", fail)
+    monkeypatch.setattr(deletion_repository, "delete_owned_rows", fail)
     response = remove(ctx)
     assert response.status_code == 500
     assert scalar(ctx, "SELECT count(*) FROM sasu.quiz_responses") == 1

@@ -2,13 +2,13 @@
 
 import logging
 
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.exceptions import ApiError, check_edit_version
 from app.integrations.storage import LocalImageStorage, LocalVideoStorage
-from app.modules.contents import lifecycle_repository, repository, service
+from app.modules.contents import deletion_repository, repository, service
 from app.modules.contents.schemas import (
     ContentDelete,
     ContentDeleted,
@@ -24,12 +24,20 @@ def delete_content(
     try:
         with session.begin():
             require_admin(session, actor_id)
-            lifecycle_repository.lock_deletion(session)
             content = repository.get_content_for_update(session, content_id)
             if content is None:
                 raise ApiError(404, "CONTENT_NOT_FOUND", "콘텐츠가 없습니다.")
             check_edit_version(body.expected_updated_at, service._utc(content.updated_at))
-            files = lifecycle_repository.delete_owned_rows(session, content)
+            deletion_repository.lock_dependencies(session, content_id)
+            files = deletion_repository.delete_owned_rows(session, content)
+    except OperationalError as exc:
+        if getattr(exc.orig, "sqlstate", None) == "55P03":
+            raise ApiError(
+                409,
+                "CONTENT_IN_USE",
+                "관련 학습자료·기록 또는 시리즈를 처리 중입니다. 잠시 후 다시 삭제해 주세요.",
+            ) from exc
+        raise ApiError(500, "INTERNAL_ERROR", "콘텐츠 삭제에 실패했습니다.") from exc
     except SQLAlchemyError as exc:
         raise ApiError(500, "INTERNAL_ERROR", "콘텐츠 삭제에 실패했습니다.") from exc
 
