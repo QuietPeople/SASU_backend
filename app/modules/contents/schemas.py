@@ -20,7 +20,7 @@ from app.modules.tags.schemas import TagRead
 StrictResourceId = Annotated[ResourceId, Field(strict=True)]
 NonBlankText = Annotated[str, Field(min_length=1)]
 Title = Annotated[str, Field(min_length=1, max_length=200)]
-ContentStatus = Literal["DRAFT", "PUBLISHED", "PRIVATE"]
+ContentStatus = Literal["DRAFT", "PUBLISHED"]
 
 
 class ApiModel(BaseModel):
@@ -35,7 +35,7 @@ class ContentListQuery(InputModel, PageQuery):
     missing: Literal["video", "learning_material", "either"] | None = None
     q: Annotated[str, Field(max_length=200)] | None = None
     category_id: ResourceId | None = None
-    status: Literal["DRAFT", "PUBLISHED", "PRIVATE", "ALL"] | None = Field(
+    status: Literal["DRAFT", "PUBLISHED", "ALL"] | None = Field(
         default=None, description="생략 시 역할에 따라 결정: ADMIN=ALL, LEARNER=PUBLISHED."
     )
     user_id: ResourceId | None = None
@@ -170,11 +170,8 @@ class EditableContent(ApiModel):
     missing_for_publish: list[str]
 
 
-class ContentVersion(InputModel):
+class ContentDelete(InputModel):
     expected_updated_at: AwareDatetime
-
-
-class ContentDelete(ContentVersion):
     confirm: StrictBool
 
     @field_validator("confirm")

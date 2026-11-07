@@ -26,7 +26,6 @@ class CategoryCounts(CategoryRead):
     total_count: int
     published_count: int
     draft_count: int
-    private_count: int = 0
 
 
 class CategoryCountsList(BaseModel):

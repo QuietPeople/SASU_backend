@@ -32,7 +32,6 @@ from app.modules.contents.schemas import (
     ContentListQuery,
     ContentPage,
     ContentUpdate,
-    ContentVersion,
     EditableContent,
     ThumbnailQuery,
     VideoInfo,
@@ -380,37 +379,11 @@ def delete_thumbnail(
     ),
 )
 def publish_content(
-    content_id: ContentId,
-    actor_id: ActorId,
-    session: Annotated[Session, Depends(get_db)],
-    body: ContentVersion | None = None,
+    content_id: ContentId, actor_id: ActorId, session: Annotated[Session, Depends(get_db)]
 ):
     return service.publish_content(
-        session,
-        actor_id,
-        content_id,
-        LocalVideoStorage(get_settings().video_storage_root),
-        body.expected_updated_at if body else None,
+        session, actor_id, content_id, LocalVideoStorage(get_settings().video_storage_root)
     )
-
-
-@router.post(
-    "/{content_id}/unpublish",
-    response_model=EditableContent,
-    operation_id="API-CNT-09",
-    dependencies=[Depends(reject_query_parameters)],
-    summary="콘텐츠 비공개 전환",
-    description=(
-        "학습 기록과 편성은 보존하며 학습자 조회·진도에서 제외합니다. 재공개 시 다시 반영합니다."
-    ),
-)
-def unpublish_content(
-    content_id: ContentId,
-    body: ContentVersion,
-    actor_id: ActorId,
-    session: Annotated[Session, Depends(get_db)],
-):
-    return lifecycle.unpublish_content(session, actor_id, content_id, body)
 
 
 @router.delete(

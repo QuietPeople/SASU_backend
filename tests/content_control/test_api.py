@@ -25,14 +25,6 @@ def version(ctx, content_id=None):
     return {"expected_updated_at": editor(ctx, content_id)["updated_at"]}
 
 
-def hide(ctx):
-    response = ctx.client.post(
-        f"/api/contents/{ctx.content_id}/unpublish", headers=ctx.headers, json=version(ctx)
-    )
-    assert response.status_code == 200, response.text
-    return response.json()
-
-
 def remove(ctx, **body):
     return ctx.client.request(
         "DELETE",
@@ -153,142 +145,10 @@ def test_00_migration_round_trip(postgres_engine):
         )
 
 
-def test_private_is_distinct_hidden_and_republish_restores_history(context):
-    ctx = context
-    seed_history(ctx)
-    thumb = image(ctx)
-    before = editor(ctx)
-    uid = ctx.records["learner"]
-    hidden = hide(ctx)
-    assert hidden["detail"]["content"]["status"] == "PRIVATE"
-    assert hidden["detail"]["published_at"] == before["detail"]["published_at"]
-    assert "preview=true" in hidden["detail"]["content"]["video_url"]
-    assert ctx.client.get(hidden["detail"]["content"]["video_url"]).status_code == 200
-    assert ctx.client.get(hidden["detail"]["content"]["thumbnail_url"]).status_code == 200
-    for path in (
-        f"/api/contents/{ctx.content_id}",
-        f"/api/contents/{ctx.content_id}/video",
-        f"/api/contents/{ctx.content_id}/thumbnail",
-        f"/api/contents/{ctx.content_id}/question",
-    ):
-        assert ctx.client.get(path, headers=ctx.learner).status_code == 404
-    assert ctx.client.get(thumb.split("?")[0]).status_code == 404
-    listed = ctx.client.get("/api/contents?status=PRIVATE", headers=ctx.headers).json()
-    assert [c["content_id"] for c in listed["items"]] == [ctx.content_id]
-    assert ctx.client.get("/api/contents?status=PRIVATE", headers=ctx.learner).status_code == 403
-    dashboard = ctx.client.get(f"/api/users/{uid}/dashboard", headers=ctx.learner).json()
-    assert dashboard["watched_content_count"] == dashboard["answered_count"] == 0
-    assert dashboard["pending_question_count"] == 0
-    for table in (
-        "watch_records",
-        "content_likes",
-        "saved_contents",
-        "quiz_attempts",
-        "quiz_responses",
-        "wrong_answers",
-        "learning_events",
-        "event_retry_keys",
-    ):
-        assert scalar(ctx, f"SELECT count(*) FROM sasu.{table}") == 1
-    assert (
-        scalar(ctx, "SELECT last_content_id FROM sasu.user_settings WHERE user_id=:uid", uid=uid)
-        == ctx.content_id
-    )
-    restored = ctx.client.post(
-        f"/api/contents/{ctx.content_id}/publish", headers=ctx.headers, json=version(ctx)
-    )
-    assert restored.status_code == 200, restored.text
-    assert restored.json()["detail"]["published_at"] == before["detail"]["published_at"]
-    detail = ctx.client.get(f"/api/contents/{ctx.content_id}", headers=ctx.learner).json()
-    assert detail["content"]["liked"] and detail["content"]["saved"]
-    assert detail["content"]["watch_completed"]
-    dashboard = ctx.client.get(f"/api/users/{uid}/dashboard", headers=ctx.learner).json()
-    assert dashboard["watched_content_count"] == dashboard["answered_count"] == 1
-    assert dashboard["pending_question_count"] == 1
-
-
-def test_private_excluded_from_series_denominator_and_restored(context):
-    ctx = context
-    seed_history(ctx, correct=True)
-    cur = series(ctx)
-    uid = ctx.records["learner"]
-    before = ctx.client.get(f"/api/curriculums/{cur}", headers=ctx.learner).json()
-    assert before["summary"]["total_steps"] == 3
-    assert before["summary"]["completed_steps"] == 1
-    hide(ctx)
-    progress = ctx.client.get(
-        f"/api/users/{uid}/curriculums/{cur}/progress", headers=ctx.learner
-    ).json()
-    assert progress["total_steps"] == 2 and progress["completed_steps"] == 0
-    assert [s["step_order"] for s in progress["steps"]] == [1, 2]
-    assert all(s["content_id"] != ctx.content_id for s in progress["steps"])
-    view = scalar(
-        ctx,
-        """SELECT total_steps FROM sasu.curriculum_progress
-        WHERE user_id=:uid AND curriculum_id=:cur""",
-        uid=uid,
-        cur=cur,
-    )
-    assert view == 2
-    admin = ctx.client.get(f"/api/curriculums/{cur}?view=editor", headers=ctx.headers).json()
-    assert admin["summary"]["total_steps"] == 3
-    restored = ctx.client.post(
-        f"/api/contents/{ctx.content_id}/publish", headers=ctx.headers, json=version(ctx)
-    )
-    assert restored.status_code == 200
-    after = ctx.client.get(f"/api/curriculums/{cur}", headers=ctx.learner).json()
-    assert after["summary"] == before["summary"]
-
-
-@pytest.mark.parametrize("action", ["unpublish", "publish", "delete"])
-def test_stale_actions_are_rejected(context, action):
-    ctx = context
-    stale = version(ctx)
-    hide(ctx)
-    if action == "delete":
-        response = ctx.client.request(
-            "DELETE",
-            f"/api/contents/{ctx.content_id}",
-            headers=ctx.headers,
-            json={**stale, "confirm": True},
-        )
-    else:
-        response = ctx.client.post(
-            f"/api/contents/{ctx.content_id}/{action}", headers=ctx.headers, json=stale
-        )
-    assert response.status_code == 409, response.text
-    assert response.json()["detail"]["code"] == "EDIT_CONFLICT"
-    assert editor(ctx)["detail"]["content"]["status"] == "PRIVATE"
-
-
 @pytest.mark.parametrize("confirmation", [False, None, 1, "true"])
 def test_delete_requires_explicit_boolean_confirmation(context, confirmation):
     assert remove(context, confirm=confirmation).status_code == 422
     assert editor(context)["detail"]["content"]["status"] == "PUBLISHED"
-
-
-@pytest.mark.parametrize("action", ["delete", "unpublish"])
-def test_only_admin_can_control_content(context, action):
-    ctx = context
-    method = "DELETE" if action == "delete" else "POST"
-    path = f"/api/contents/{ctx.content_id}" + ("" if action == "delete" else "/unpublish")
-    response = ctx.client.request(
-        method,
-        path,
-        headers=ctx.learner,
-        json={**version(ctx), **({"confirm": True} if action == "delete" else {})},
-    )
-    assert response.status_code == 403
-
-
-def test_draft_cannot_be_mislabeled_private(context):
-    ctx = context
-    cid = ctx.records["questions"][1]["content_id"]
-    response = ctx.client.post(
-        f"/api/contents/{cid}/unpublish", headers=ctx.headers, json=version(ctx, cid)
-    )
-    assert response.status_code == 409
-    assert response.json()["detail"]["code"] == "CONTENT_NOT_PUBLISHED"
 
 
 def test_permanent_delete_cleans_references_and_reorders_series(context):
@@ -434,18 +294,6 @@ def test_standalone_quiz_history_changes_remain_forbidden(context, table, id_col
         ctx.database.execute(text(statement + f" WHERE {id_column}=:key"), {"key": key})
 
 
-def test_unknown_deleted_content_and_query_parameters_are_rejected(context):
-    ctx = context
-    stamp = version(ctx)
-    for method, path, body in [
-        ("POST", "/api/contents/999999/unpublish", stamp),
-        ("DELETE", "/api/contents/999999", {**stamp, "confirm": True}),
-        ("POST", f"/api/contents/{ctx.content_id}/unpublish?extra=1", stamp),
-    ]:
-        response = ctx.client.request(method, path, headers=ctx.headers, json=body)
-        assert response.status_code in (404, 422)
-
-
 def test_quiz_parent_cannot_be_deleted_without_deleting_content(context):
     ctx = context
     with pytest.raises(IntegrityError), ctx.database.begin_nested():
@@ -454,32 +302,114 @@ def test_quiz_parent_cannot_be_deleted_without_deleting_content(context):
         )
 
 
-def test_private_attempt_and_response_are_hidden_until_republished(context):
-    ctx = context
-    ids = seed_history(ctx)
-    response_id = scalar(
-        ctx, "SELECT response_id FROM sasu.quiz_responses WHERE attempt_id=:id", id=ids["attempt"]
-    )
-    hide(ctx)
-    uid = ctx.records["learner"]
-    attempt = f"/api/users/{uid}/question-attempts/{ids['attempt']}"
-    assert ctx.client.get(attempt, headers=ctx.learner).status_code == 404
-    assert ctx.client.get(f"/api/responses/{response_id}", headers=ctx.learner).status_code == 404
-    assert ctx.client.get(f"/api/responses/{response_id}", headers=ctx.headers).status_code == 200
-    assert (
-        ctx.client.post(
-            f"/api/contents/{ctx.content_id}/publish", headers=ctx.headers, json=version(ctx)
-        ).status_code
-        == 200
-    )
-    assert ctx.client.get(attempt, headers=ctx.learner).status_code == 200
-    assert ctx.client.get(f"/api/responses/{response_id}", headers=ctx.learner).status_code == 200
-
-
 @pytest.mark.parametrize("index", [0, 1, 2])
-def test_delete_private_draft_and_missing_video(context, index):
+def test_delete_published_draft_and_missing_video(context, index):
     ctx = context
     ctx.content_id = ctx.records["questions"][index]["content_id"]
-    if index == 0:
-        hide(ctx)
     assert remove(ctx).status_code == 200
+
+
+def test_stale_delete_is_rejected_without_changing_content(context):
+    ctx = context
+    stale = version(ctx)
+    updated = ctx.client.patch(
+        f"/api/contents/{ctx.content_id}",
+        headers=ctx.headers,
+        json={**stale, "title": "다른 창에서 저장한 제목"},
+    )
+    assert updated.status_code == 200, updated.text
+    response = ctx.client.request(
+        "DELETE",
+        f"/api/contents/{ctx.content_id}",
+        headers=ctx.headers,
+        json={**stale, "confirm": True},
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["code"] == "EDIT_CONFLICT"
+    assert editor(ctx)["detail"]["content"]["title"] == "다른 창에서 저장한 제목"
+
+
+def test_only_admin_can_delete_content(context):
+    ctx = context
+    response = ctx.client.request(
+        "DELETE",
+        f"/api/contents/{ctx.content_id}",
+        headers=ctx.learner,
+        json={**version(ctx), "confirm": True},
+    )
+    assert response.status_code == 403
+
+
+def test_unknown_content_and_query_parameters_are_rejected(context):
+    ctx = context
+    body = {**version(ctx), "confirm": True}
+    response = ctx.client.request("DELETE", "/api/contents/999999", headers=ctx.headers, json=body)
+    assert response.status_code == 404
+    response = ctx.client.request(
+        "DELETE",
+        f"/api/contents/{ctx.content_id}?extra=1",
+        headers=ctx.headers,
+        json=body,
+    )
+    assert response.status_code == 422
+
+
+def test_existing_publish_contract_and_statuses_are_unchanged(context):
+    ctx = context
+    schema = ctx.client.get("/openapi.json").json()
+    assert "/api/contents/{content_id}/unpublish" not in schema["paths"]
+    assert (
+        "PRIVATE"
+        not in schema["components"]["schemas"]["ContentSummary"]["properties"]["status"]["enum"]
+    )
+    assert (
+        ctx.client.post(f"/api/contents/{ctx.content_id}/publish", headers=ctx.headers).status_code
+        == 200
+    )
+
+
+def test_delete_removes_all_learners_and_old_generations_but_preserves_other_content(context):
+    from types import SimpleNamespace
+
+    ctx = context
+    seed_history(ctx)
+    seed_history(ctx, index=2)
+    other = scalar(
+        ctx,
+        "SELECT user_id FROM sasu.app_users WHERE role='LEARNER' AND user_id<>:id LIMIT 1",
+        id=ctx.records["learner"],
+    )
+    assert other is not None
+    alternate = SimpleNamespace(database=ctx.database, records={**ctx.records, "learner": other})
+    seed_history(alternate)
+    ctx.database.execute(
+        text("UPDATE sasu.user_settings SET learning_epoch=2 WHERE user_id=:id"),
+        {"id": ctx.records["learner"]},
+    )
+    q = ctx.records["questions"][0]
+    ctx.database.execute(
+        text("""INSERT INTO sasu.quiz_attempts
+        (attempt_id,user_id,learning_epoch,quiz_id,quiz_version_id,context)
+        VALUES (:attempt,:user,2,:quiz,:version,'VIDEO_END')"""),
+        {
+            "attempt": uuid4(),
+            "user": ctx.records["learner"],
+            "quiz": q["question_id"],
+            "version": q["question_version_id"],
+        },
+    )
+    ctx.database.commit()
+    assert remove(ctx).status_code == 200
+    for table in [
+        "watch_visits",
+        "watch_records",
+        "content_likes",
+        "saved_contents",
+        "quiz_attempts",
+        "quiz_responses",
+        "wrong_answers",
+        "learning_events",
+        "event_retry_keys",
+    ]:
+        assert scalar(ctx, f"SELECT count(*) FROM sasu.{table}") == 1, table
+    assert scalar(ctx, "SELECT count(*) FROM sasu.quizzes") == 2

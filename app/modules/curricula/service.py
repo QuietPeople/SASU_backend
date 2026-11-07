@@ -1,4 +1,4 @@
-"""커리큘럼 편성과 공통 조회. PRIVATE 편성은 보존하고 학습자 조회에서 제외한다."""
+"""커리큘럼 편성과 공통 조회. 비공개 단계도 편성과 진행률 분모에 보존한다."""
 
 from collections import defaultdict
 from decimal import Decimal
@@ -128,11 +128,7 @@ def get_detail(
     steps = [
         make_step(row, user_id, query.view, actor.user_id)
         for row in repository.load_steps(session, [curriculum_id], user_id)
-        if query.view == "editor" or row["status"] != "PRIVATE"
     ]
-    if query.view == "learner":
-        for index, step in enumerate(steps, 1):
-            step.step_order = index
     summary = make_summary(
         curriculum,
         steps,
@@ -156,8 +152,6 @@ def get_list(session: Session, query: CurriculumListQuery, actor: Actor) -> Page
     for row in repository.list_step_states(
         session, [c["curriculum_id"] for c in curricula], user_id
     ):
-        if query.view == "learner" and row["status"] == "PRIVATE":
-            continue
         state = counts[row["curriculum_id"]]
         state[0] += 1
         state[1] += row["status"] == "PUBLISHED" and is_video_row_available(row)
@@ -258,10 +252,7 @@ def get_progress(
     steps = [
         make_step(row, user_id, "learner", actor.user_id)
         for row in repository.load_steps(session, [curriculum_id], user_id)
-        if row["status"] != "PRIVATE"
     ]
-    for index, step in enumerate(steps, 1):
-        step.step_order = index
     summary = make_summary(curriculum, steps, user_id)
     return CurriculumProgress(
         user_id=user_id,

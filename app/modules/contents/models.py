@@ -38,7 +38,6 @@ class ImageAsset(Base):
 class ContentStatus(StrEnum):
     DRAFT = "DRAFT"
     PUBLISHED = "PUBLISHED"
-    PRIVATE = "PRIVATE"
 
 
 class VideoAsset(Base):

@@ -113,16 +113,17 @@ def test_learning_request_after_delete_cannot_recreate_orphan_records(state, mon
         assert response.status_code == 404, response.text
 
 
-def test_concurrent_private_transitions_reject_outdated_edit_version(state):
+def test_concurrent_deletes_only_one_succeeds(state):
     client, records, path, headers, version = state
     with ThreadPoolExecutor(2) as pool:
         futures = [
             pool.submit(
-                client.post,
-                path + "/unpublish",
+                client.request,
+                "DELETE",
+                path,
                 headers=headers,
-                json={"expected_updated_at": version},
+                json={"expected_updated_at": version, "confirm": True},
             )
             for _ in range(2)
         ]
-        assert sorted(f.result(timeout=10).status_code for f in futures) == [200, 409]
+        assert sorted(future.result(timeout=10).status_code for future in futures) == [200, 404]

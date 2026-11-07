@@ -65,7 +65,7 @@ def build_content_summary(item: repository.Presentation, actor_id: int) -> Conte
             else None,
         },
         actor_id,
-        preview=content.status != ContentStatus.PUBLISHED,
+        preview=content.status == ContentStatus.DRAFT,
     )
 
 
@@ -276,7 +276,6 @@ def publish_content(
     actor_id: int,
     content_id: int,
     storage: LocalVideoStorage,
-    expected_updated_at: datetime | None = None,
 ) -> EditableContent:
     try:
         with session.begin():
@@ -284,16 +283,13 @@ def publish_content(
             content = repository.get_content_for_update(session, content_id)
             if content is None:
                 raise ApiError(404, "CONTENT_NOT_FOUND", "콘텐츠가 없습니다.")
-            if expected_updated_at is not None:
-                check_edit_version(expected_updated_at, _utc(content.updated_at))
             item = repository.load_presentations(session, [content])[0]
             _validate_caution(content)
             _validate_publish(item, storage)
             if content.status != ContentStatus.PUBLISHED:
                 content.status = ContentStatus.PUBLISHED
-                content.updated_at = datetime.now(UTC)
-                if content.published_at is None:
-                    content.published_at = content.updated_at
+                content.published_at = datetime.now(UTC)
+                content.updated_at = content.published_at
                 session.flush()
             result = _editable(
                 item, actor_id, repository.related_curriculums(session, content_id), storage

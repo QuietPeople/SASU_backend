@@ -64,7 +64,6 @@ def create_attempt(
                 CONTEXTS[request.response_path],
             ):
                 raise ApiError(409, "ATTEMPT_ID_CONFLICT", "다른 입력에 사용된 풀이 ID입니다.")
-            _check_private_attempt(session, existing)
             result = make_attempt(session, existing)
             session.commit()
             return result, False
@@ -110,20 +109,12 @@ def create_attempt(
         raise
 
 
-def _check_private_attempt(session: Session, record) -> None:
-    content_id = repository.question_content_id(session, record["quiz_id"])
-    content = repository.lock_content(session, content_id) if content_id is not None else None
-    if content is None or content["status"] == "PRIVATE":
-        raise ApiError(404, "ATTEMPT_NOT_FOUND", "이용 가능한 풀이를 찾을 수 없습니다.")
-
-
 def recover_attempt(session: Session, actor_id: int, user_id: int, attempt_id: UUID) -> Attempt:
     require_learner(session, actor_id, user_id)
     epoch = current_epoch(session, user_id, write=False)
     record = repository.find_attempt(session, attempt_id)
     if record is None or record["user_id"] != user_id or record["learning_epoch"] != epoch:
         raise ApiError(404, "ATTEMPT_NOT_FOUND", "본인의 현재 세대 풀이를 찾을 수 없습니다.")
-    _check_private_attempt(session, record)
     return make_attempt(session, record)
 
 
