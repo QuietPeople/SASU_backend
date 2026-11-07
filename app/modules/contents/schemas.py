@@ -170,6 +170,23 @@ class EditableContent(ApiModel):
     missing_for_publish: list[str]
 
 
+class ContentDelete(InputModel):
+    expected_updated_at: AwareDatetime
+    confirm: StrictBool
+
+    @field_validator("confirm")
+    @classmethod
+    def require_confirmation(cls, value: bool) -> bool:
+        if not value:
+            raise ValueError("영구 삭제에는 confirm=true가 필요합니다.")
+        return value
+
+
+class ContentDeleted(ApiModel):
+    content_id: ResourceId
+    file_cleanup_pending: bool
+
+
 class VideoInfo(ApiModel):
     content_id: ResourceId
     video_url: str

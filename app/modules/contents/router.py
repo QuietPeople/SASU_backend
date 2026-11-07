@@ -22,9 +22,11 @@ from app.core.config import get_settings
 from app.core.exceptions import ApiError, ErrorResponse
 from app.db.session import get_db
 from app.integrations.storage import LocalVideoStorage
-from app.modules.contents import service, thumbnail_service, video_service
+from app.modules.contents import deletion_service, service, thumbnail_service, video_service
 from app.modules.contents.schemas import (
     ContentCreate,
+    ContentDelete,
+    ContentDeleted,
     ContentDetail,
     ContentDetailQuery,
     ContentListQuery,
@@ -382,3 +384,30 @@ def publish_content(
     return service.publish_content(
         session, actor_id, content_id, LocalVideoStorage(get_settings().video_storage_root)
     )
+
+
+@router.delete(
+    "/{content_id}",
+    response_model=ContentDeleted,
+    operation_id="API-CNT-10",
+    dependencies=[Depends(reject_query_parameters)],
+    summary="콘텐츠 영구 삭제",
+    responses={
+        409: {
+            "model": ErrorResponse,
+            "description": "편집 시각 불일치 또는 관련 학습·편성 처리 중(CONTENT_IN_USE)",
+        },
+    },
+    description=(
+        "confirm=true와 편집 시각을 확인하고 모든 세대의 관련 기록·퀴즈·편성을 제거합니다. "
+        "공유 자료는 보존합니다. 파일 정리 실패 시 file_cleanup_pending=true를 반환합니다."
+        " 관련 학습·편성 처리와 충돌하면 삭제하지 않고 409로 재시도를 안내합니다."
+    ),
+)
+def delete_content(
+    content_id: ContentId,
+    body: ContentDelete,
+    actor_id: ActorId,
+    session: Annotated[Session, Depends(get_db)],
+):
+    return deletion_service.delete_content(session, actor_id, content_id, body)
